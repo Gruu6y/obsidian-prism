@@ -67,6 +67,12 @@ Obsidian Prism acknowledges the UI/UX concepts and interaction patterns establis
 - **Repository**: <https://github.com/claudenoshujin/claude-web>
 - **Contribution**: *Mascot Pile & Micro-Ecology Interaction Inspiration* (clean-room independent implementation in Obsidian Prism; zero source code copied).
 
+### 2.5 `wp3171216237/dsh-TUI` (`assets/deepy`, also shipped via `Nwflower/dsh-claude-style`)
+- **Repository**: <https://github.com/wp3171216237/dsh-TUI>
+- **Copyright**: `Copyright (c) 2026 chimney (@wp3171216237)`
+- **Original License**: MIT License (compatible with `GPL-3.0-only`)
+- **Contribution**: Visual silhouette, cobalt-blue + white-belly palette, and water-spout animation concept of the **Deepy** DeepSeek pixel whale mascot, adapted cleanly into this repository's `16×10` zero-outline `PX=3` Clawd pixel grammar inside `dual-mascot-rig.js` alongside the original silver-white GPT Dragon (`dragon`, inspired by the community white-dragon motif with zero copied artwork).
+
 ---
 
 ## 3. Preserved Upstream MIT License Text
@@ -78,6 +84,7 @@ Copyright (c) 2026 0DNANCY (agy-claude-style)
 Copyright (c) 2026 AG Pulse contributors (antigrative-dashboard)
 Copyright (c) 2026 月上寒 / LLYSH-HANNARI (antigravity-Codex-Claude-effort-slider)
 Copyright (c) 2026 Antigravity Chinese Localization Contributors (yiheng8023/antigravity-chinese)
+Copyright (c) 2026 chimney / @wp3171216237 (dsh-TUI / Deepy mascot reference)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

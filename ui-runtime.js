@@ -103,7 +103,12 @@
       out[sKey] = on ? 'on' : 'off';
     }
     out.placeholderStyle = out.promptStyle = (out.placeholderStyle ?? out.promptStyle) === 'host' ? 'host' : 'studio';
-    out.mascot = out.mascot === 'off' || out.mascot === false ? 'off' : out.mascot === 'minis' ? 'minis' : 'crab';
+    out.mascot =
+      out.mascot === 'off' || out.mascot === false
+        ? 'off'
+        : out.mascot === 'minis' || out.mascot === 'quad' || out.mascot === 'quad-minis'
+          ? out.mascot
+          : 'crab';
     for (const k of ['sidebarCompact', 'codeLigatures']) out[k] = out[k] === true || out[k] === 'on';
     for (const k of ['sidebarNavFold', 'sidebarStudio', 'autoUpdate']) out[k] = out[k] === 'on' || out[k] === true ? 'on' : 'off';
     for (const k of ['smoothCaret', 'contextMenu']) out[k] = out[k] === undefined ? true : out[k] !== false && out[k] !== 'off';
@@ -606,7 +611,9 @@
     if (nextYield === 'peek') setAttrIfChanged(msRoot, 'data-ag-mascot-peek', '1');
     else if (ha(msRoot, 'data-ag-mascot-peek')) ra(msRoot, 'data-ag-mascot-peek');
 
-    const camp = modelInfo?.camp || 'gemini';
+    const quadEnabled = cfg.mascot === 'quad' || cfg.mascot === 'quad-minis';
+    const rawCamp = modelInfo?.mascotCamp || modelInfo?.camp || 'gemini';
+    const camp = quadEnabled ? rawCamp : rawCamp === 'claude' ? 'claude' : 'gemini';
     const isOrch = !!(modelInfo?.isOrchestrator);
     const curTier = String(modelInfo?.tier || '').toLowerCase();
     const streamTier = curTier === 'high' || curTier === 'xhigh' || isOrch ? 3 : 2;
@@ -618,7 +625,8 @@
       yieldMode: nextYield,
       leapOffsetY: 0,
       popoverRightWidth: 0,
-      miniPileEnabled: cfg.mascot === 'minis',
+      miniPileEnabled: cfg.mascot === 'minis' || cfg.mascot === 'quad-minis',
+      quadEnabled,
       orchestrator: isOrch,
       reducedMotion: motionReduced(),
     };

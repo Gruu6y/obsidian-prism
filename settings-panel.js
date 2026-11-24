@@ -64,7 +64,7 @@
     contextMenu: S_T,
     codeFont: mkSp(['default', 'jetbrains', 'cascadia', 'sfmono']),
     codeLigatures: S_F,
-    mascot: mkSp(['crab', 'minis', 'off'], null, { dual: 'crab' }),
+    mascot: mkSp(['crab', 'minis', 'quad', 'quad-minis', 'off'], null, { dual: 'crab' }),
     sidebarRestyle: S_T,
     sidebarCompact: S_F,
     sidebarNavFold: mkSp(['off', 'on']),
@@ -257,10 +257,10 @@
   };
 
   const mascotLabels = (lang, ui) => {
-    if (lang === 'zh-TW' || lang === 'yue') return ['雙寵', '雙寵+三蟹', ui.offLabel || '關閉'];
-    if (lang === 'ja') return ['ペア', 'ペア+ミニ蟹', ui.offLabel || 'オフ'];
-    if (lang === 'en') return ['Dual', 'Dual+Crabs', ui.offLabel || 'Off'];
-    return ['双宠', '双宠+三蟹', ui.offLabel || '关闭'];
+    if (lang === 'zh-TW' || lang === 'yue') return ['雙寵', '雙寵+三蟹', '四寵全員', '四寵+三蟹', ui.offLabel || '關閉'];
+    if (lang === 'ja') return ['ペア', 'ペア+蟹', '4匹全員', '4匹+蟹', ui.offLabel || 'オフ'];
+    if (lang === 'en') return ['Dual', 'Dual+Crabs', 'Quad', 'Quad+Crabs', ui.offLabel || 'Off'];
+    return ['双宠', '双宠+三蟹', '四宠全员', '四宠+三蟹', ui.offLabel || '关闭'];
   };
 
   const mountOrSyncSettingsSection = (ctx) => {
@@ -671,7 +671,7 @@
             ]
           ).map((o) => [o.id, o.label]);
 
-          const [mDual, mMinis, mOff] = mascotLabels(lang, ui);
+          const [mDual, mMinis, mQuad, mQuadMinis, mOff] = mascotLabels(lang, ui);
           const U = (k, d = '') => ui[k] || d;
           const onOff = [[true, U('onLabel', 'On')], [false, U('offLabel', 'Off')]];
           const autoOnOff = [['auto', U('optAutoCoexist', 'Auto')], ['on', U('onLabel', 'On')], ['off', U('offLabel', 'Off')]];
@@ -701,7 +701,7 @@
             R('contextMenu', 'rowContextMenuTitle', 'rowContextMenuDesc', onOff),
             RS('codeFont', [['default', U('optFontDefault')], ['jetbrains', 'JetBrains Mono'], ['cascadia', 'Cascadia Code'], ['sfmono', U('optFontSfmono', 'SF Mono')]]),
             RS('codeLigatures', onOff),
-            RS('mascot', [['crab', mDual], ['minis', mMinis], ['off', mOff]]),
+            RS('mascot', [['crab', mDual], ['minis', mMinis], ['quad', mQuad], ['quad-minis', mQuadMinis], ['off', mOff]]),
             RS('sidebarRestyle', onOff, 'Sidebar'),
             RS('sidebarCompact', onOff),
             R('sidebarNavFold', 'setSidebarNavFoldLabel', 'setSidebarNavFoldDesc', [['off', U('optSidebarNavFoldOff', 'Show All')], ['on', U('optSidebarNavFoldOn', 'Fold Extra')]]),

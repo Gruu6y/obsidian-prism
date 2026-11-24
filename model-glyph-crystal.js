@@ -94,6 +94,14 @@
     return { brand, tier, isOrchestrator, camp: brand === 'claude' ? 'claude' : 'gemini' };
   };
 
+  const resolveMascotCamp = (rawText) => {
+    const base = stripTranslatedEffortSuffix(rawText).toLowerCase();
+    if (/\bclaude\b|\banthropic\b|\bsonnet\b|\bopus\b|\bhaiku\b/.test(base)) return 'claude';
+    if (/\bdeepseek\b|深度求索/.test(base)) return 'deepseek';
+    if (/\bgpt\b|\bopenai\b|\bo1\b|\bo3\b|\bo4\b|\bcodex\b/.test(base)) return 'gpt';
+    return 'gemini';
+  };
+
   const createModelGlyphCrystalController = ({
     animatedIcons,
     crystalPrismCore,
@@ -226,10 +234,13 @@
     };
 
     const parseModelTriggerInfo = (btn) => {
-      const info = parseModelLabelInfo(readButtonLabelWithoutGlyph(btn));
+      const raw = readButtonLabelWithoutGlyph(btn);
+      const info = parseModelLabelInfo(raw);
+      info.mascotCamp = resolveMascotCamp(raw);
       if (info.isOrchestrator && ga(btn, 'data-ces-orch-b') === 'claude') {
         info.brand = 'claude';
         info.camp = 'claude';
+        info.mascotCamp = 'claude';
       }
       return info;
     };
@@ -756,6 +767,7 @@
       stripTranslatedEffortSuffix,
       normalizeModelEffortLabel,
       parseModelLabelInfo,
+      resolveMascotCamp,
       parseModelTriggerInfo,
       renderSparkSvg,
       buildBrandMarkSvg,
@@ -786,6 +798,7 @@
     stripTranslatedEffortSuffix,
     normalizeModelEffortLabel,
     parseModelLabelInfo,
+    resolveMascotCamp,
     createModelGlyphCrystalController,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;

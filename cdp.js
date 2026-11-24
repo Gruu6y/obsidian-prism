@@ -92,7 +92,7 @@ const VALIDATORS = {
   composer: ['on', 'off'],
   placeholderStyle: ['studio', 'host'],
   promptStyle: ['studio', 'host'],
-  mascot: ['crab', 'minis', 'dual', 'off'],
+  mascot: ['crab', 'minis', 'quad', 'quad-minis', 'dual', 'off'],
   logoInk: ['accent', 'foreground'],
   sidebarRestyle: 'boolean',
   sidebar: ['on', 'off'],

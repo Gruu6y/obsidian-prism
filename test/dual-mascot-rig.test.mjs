@@ -1850,3 +1850,143 @@ test('WO-MAIN-001B: 9 Slash theaters, 4 contextual links, habitat 3-mode 0fps pr
     stage.dispose();
   }
 });
+
+test('Quad mascot mode: GPT White Dragon & DeepSeek Whale sprites, 4-camp handoff, 7-tier stacking, hot quad toggle, and config schema', () => {
+  assert.ok(rig.DRAGON_PARTS?.body?.stand, 'DRAGON_PARTS should be exported with body.stand');
+  assert.ok(rig.WHALE_PARTS?.body?.stand, 'WHALE_PARTS should be exported with body.stand');
+  assert.ok(rig.PALETTES.dragon && rig.PALETTES.whale, 'PALETTES must include dragon and whale');
+
+  // 1. Every pose across all 4 species resolves valid palette keys and grounded maxY <= 9
+  const checkPoses = ['idle', 'walk', 'happy', 'sleep', 'loaf', 'squash', 'flat', 'peek', 'angry', 'dragonFlame', 'whaleSpout', 'slashBoost'];
+  for (const kind of ['clawd', 'cat', 'dragon', 'whale']) {
+    const pal = rig.PALETTES[kind];
+    for (const pose of checkPoses) {
+      for (let t = 0; t < 4; t++) {
+        const layers = rig.buildClipLayers(kind, pose, t, { clipTick: t, noShadow: pose === 'peek' });
+        assert.ok(layers.length > 0, `${kind}:${pose}@${t} must emit layers`);
+        let maxY = -99;
+        for (const l of layers) {
+          for (let r = 0; r < (l.rows || []).length; r++) {
+            const row = l.rows[r];
+            for (let i = 0; i < row.length; i++) {
+              const ch = row[i];
+              if (ch === '.' || ch === ' ') continue;
+              assert.ok(pal[ch], `Missing palette key '${ch}' for ${kind}:${pose}@${t}`);
+              if (!l.grounded && l.oy + r > maxY) maxY = l.oy + r;
+            }
+          }
+        }
+        if (pose !== 'peek' && pose !== 'walk') {
+          assert.ok(maxY <= 9, `${kind}:${pose}@${t} exceeded ground baseline maxY=${maxY}`);
+        }
+      }
+    }
+  }
+
+  // 2. Quad mount, 4-camp leadership, 4-tier/7-tier stacking, and lossless hot toggle quad <-> dual
+  const makeEl = (tag) => {
+    const attrs = new Map();
+    const listeners = new Map();
+    const children = [];
+    const ctx = {
+      setTransform() {}, clearRect() {}, save() {}, restore() {},
+      translate() {}, scale() {}, rotate() {}, beginPath() {}, rect() {}, clip() {}, fillRect() {}, drawImage() {},
+    };
+    const node = {
+      tagName: String(tag).toUpperCase(),
+      clientWidth: 760, width: 96, height: 84, dataset: {},
+      style: { display: '', zIndex: '', transform: '', transition: '', cursor: '' },
+      children,
+      setAttribute(k, v) { attrs.set(k, String(v)); },
+      getAttribute(k) { return attrs.get(k) ?? null; },
+      hasAttribute(k) { return attrs.has(k); },
+      removeAttribute(k) { attrs.delete(k); },
+      appendChild(ch) { children.push(ch); ch.parentNode = this; return ch; },
+      insertBefore(ch, ref) {
+        const idx = children.indexOf(ref);
+        if (idx >= 0) children.splice(idx, 0, ch);
+        else children.push(ch);
+        ch.parentNode = this;
+        return ch;
+      },
+      removeChild(ch) { const i = children.indexOf(ch); if (i >= 0) children.splice(i, 1); },
+      remove() { this.parentNode?.removeChild?.(this); },
+      addEventListener(t, fn) { if (!listeners.has(t)) listeners.set(t, new Set()); listeners.get(t).add(fn); },
+      removeEventListener(t, fn) { listeners.get(t)?.delete(fn); },
+      getContext() { return ctx; },
+      getBoundingClientRect() { return { left: 0, right: 96, top: 0, bottom: 84, width: 96, height: 84 }; },
+    };
+    return node;
+  };
+  const doc = {
+    hidden: false,
+    documentElement: { getAttribute: () => null, hasAttribute: () => false },
+    defaultView: { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {}, requestAnimationFrame: () => 1, cancelAnimationFrame() {} },
+    createElement(tag) { const n = makeEl(tag); n.ownerDocument = doc; return n; },
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  const hostEl = doc.createElement('div');
+  const stage = rig.mountDualMascotStage(hostEl, { quadEnabled: true, miniPileEnabled: true, camp: 'gpt', reducedMotion: true });
+  try {
+    let snap = stage.getLayoutSnapshot();
+    assert.equal(snap.quadEnabled, true);
+    assert.equal(snap.camp, 'gpt');
+    assert.deepEqual(snap.actors.map((a) => a.id), ['cat', 'clawd', 'dragon', 'whale']);
+    const actorNodes = hostEl.children.filter((n) => n.className === 'ag-v2-mascot-actor');
+    assert.equal(actorNodes.length, 4, 'Quad mode must mount 4 main actor DOM elements');
+
+    // Camp switch to deepseek moves whale into leader slot
+    stage.setState({ camp: 'deepseek' });
+    snap = stage.getLayoutSnapshot();
+    assert.equal(snap.camp, 'deepseek');
+
+    // 7-tier totem stacking across 4 mains + 3 mini crabs
+    assert.equal(stage.stackOnto('cat', 'clawd'), true);
+    assert.equal(stage.stackOnto('dragon', 'cat'), true);
+    assert.equal(stage.stackOnto('whale', 'dragon'), true);
+    assert.equal(stage.stackOnto('cowboy', 'whale'), true);
+    assert.equal(stage.stackOnto('shades', 'cowboy'), true);
+    assert.equal(stage.stackOnto('wizard', 'shades'), true);
+    snap = stage.getLayoutSnapshot();
+    assert.equal(snap.towers[0].length, 7, 'Quad + minis must support up to 7-tier totem tower');
+
+    // Hot toggle quadEnabled -> false cleanly unmounts dragon & whale DOM
+    stage.setState({ quadEnabled: false, camp: 'claude' });
+    snap = stage.getLayoutSnapshot();
+    assert.equal(snap.quadEnabled, false);
+    assert.deepEqual(snap.actors.map((a) => a.id), ['cat', 'clawd']);
+    assert.equal(hostEl.children.filter((n) => n.className === 'ag-v2-mascot-actor').length, 2);
+
+    // Hot toggle back to true remounts dragon & whale cleanly
+    stage.setState({ quadEnabled: true });
+    assert.equal(hostEl.children.filter((n) => n.className === 'ag-v2-mascot-actor').length, 4);
+  } finally {
+    stage.dispose();
+  }
+  assert.equal(hostEl.children.filter((n) => n.className === 'ag-v2-mascot-actor').length, 0);
+
+  // 3. Model camp resolver + config schema validation
+  const mgc = require('../model-glyph-crystal.js');
+  assert.equal(mgc.resolveMascotCamp('Claude Sonnet 4.6'), 'claude');
+  assert.equal(mgc.resolveMascotCamp('Gemini 2.5 Pro'), 'gemini');
+  assert.equal(mgc.resolveMascotCamp('GPT-5.2 (低)'), 'gpt');
+  assert.equal(mgc.resolveMascotCamp('o3-mini'), 'gpt');
+  assert.equal(mgc.resolveMascotCamp('DeepSeek R1'), 'deepseek');
+  assert.equal(mgc.resolveMascotCamp('深度求索 V3'), 'deepseek');
+  assert.deepEqual(mgc.parseModelLabelInfo('GPT-5.2 (低)'), {
+    brand: 'openai',
+    tier: 'low',
+    isOrchestrator: false,
+    camp: 'gemini',
+  });
+
+  const cdp = require('../cdp.js');
+  assert.equal(cdp.validateConfigEntry('mascot', 'quad'), true);
+  assert.equal(cdp.validateConfigEntry('mascot', 'quad-minis'), true);
+  const sp = require('../settings-panel.js');
+  assert.deepEqual([...sp.PRISM_SETTINGS_SCHEMA.mascot.allowed], ['crab', 'minis', 'quad', 'quad-minis', 'off']);
+  assert.equal(sp.validateImportedConfigJson(JSON.stringify({ mascot: 'quad' })).settings.mascot, 'quad');
+  assert.equal(sp.validateImportedConfigJson(JSON.stringify({ mascot: 'quad-minis' })).settings.mascot, 'quad-minis');
+  assert.equal(sp.validateImportedConfigJson(JSON.stringify({ mascot: 'dual' })).settings.mascot, 'crab');
+});
