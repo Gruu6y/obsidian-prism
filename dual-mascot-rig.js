@@ -725,11 +725,11 @@
       s.shadow = 'w14'; s.body = 'squash'; s.legs = isWhale ? null : 'crouch';
       if (isFelineRig) { s.ears = 'nod'; s.eyes = 'half'; if (isWhale) s.paws = 'tuck'; } else s.eyes = shiftFrame(p.eyes.squint, 0, 1);
     },
-    loaf(s, { isCat, isWhale, poseKey, phase4, tickIdx }) {
+    loaf(s, { isCat, isWhale, poseKey, tickIdx }) {
       if (!isCat && !isWhale) return;
       s.shadow = 'w14'; s.ears = 'loaf'; s.body = 'loaf'; s.legs = null;
       if (isWhale) s.paws = 'tuck';
-      s.eyes = poseKey === 'sleep' || phase4 === 3 ? 'loafShut' : 'loafHalf';
+      s.eyes = 'loafShut';
       s.tail = poseKey === 'sleep' || isWhale ? 'loaf' : floor(tickIdx / 4) % 2 ? 'loaf' : 'curl';
     },
     sleep(s, c) {

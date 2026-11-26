@@ -3095,3 +3095,92 @@ test('subtle motion [role="button"] rules exclude .ag-v2-mascot-actor and [data-
     );
   }
 });
+
+test('Issue #109: whale and cat keep eyes closed (loafShut) without 400ms blinking during loaf and sleep', () => {
+  // 1) Pure layer check across ticks 0..15 for whale & cat in both loaf and sleep
+  const whaleLoafRef = rig.buildClipLayers('whale', 'loaf', 0);
+  const whaleSleepRef = rig.buildClipLayers('whale', 'sleep', 0);
+  const catSleepRef = rig.buildClipLayers('cat', 'sleep', 0);
+
+  for (let t = 0; t < 16; t++) {
+    for (const pose of ['loaf', 'sleep']) {
+      const wLayers = rig.buildClipLayers('whale', pose, t);
+      assert.ok(wLayers.includes(rig.WHALE_PARTS.eyes.loafShut), `whale:${pose}@${t} must keep loafShut eyes`);
+      assert.equal(wLayers.includes(rig.WHALE_PARTS.eyes.loafHalf), false, `whale:${pose}@${t} must not blink to loafHalf`);
+
+      const wBlinkLayers = rig.buildClipLayers('whale', pose, t, { blink: true, blinkStage: 'closed', eyeScan: 1 });
+      assert.ok(wBlinkLayers.includes(rig.WHALE_PARTS.eyes.loafShut), `whale:${pose}@${t} must ignore blink overrides`);
+
+      const cLayers = rig.buildClipLayers('cat', pose, t);
+      assert.ok(cLayers.includes(rig.CAT_PARTS.eyes.loafShut), `cat:${pose}@${t} must keep loafShut eyes`);
+      assert.equal(cLayers.includes(rig.CAT_PARTS.eyes.loafHalf), false, `cat:${pose}@${t} must not blink to loafHalf`);
+
+      const cBlinkLayers = rig.buildClipLayers('cat', pose, t, { blink: true, blinkStage: 'half', eyeScan: -1 });
+      assert.ok(cBlinkLayers.includes(rig.CAT_PARTS.eyes.loafShut), `cat:${pose}@${t} must ignore blink overrides`);
+    }
+
+    // Whale loaf/sleep and cat sleep remain 100% static across ticks; cat loaf preserves slow 4-tick tail swish
+    assert.deepEqual(rig.buildClipLayers('whale', 'loaf', t), whaleLoafRef, `whale:loaf@${t} layers must stay static`);
+    assert.deepEqual(rig.buildClipLayers('whale', 'sleep', t), whaleSleepRef, `whale:sleep@${t} layers must stay static`);
+    assert.deepEqual(rig.buildClipLayers('cat', 'sleep', t), catSleepRef, `cat:sleep@${t} layers must stay static`);
+
+    const catLoafLayers = rig.buildClipLayers('cat', 'loaf', t);
+    const expectedCatTail = Math.floor(t / 4) % 2 ? rig.CAT_PARTS.tail.loaf : rig.CAT_PARTS.tail.curl;
+    assert.ok(catLoafLayers.includes(expectedCatTail), `cat:loaf@${t} must preserve gentle tail cadence`);
+  }
+
+  // Non-regression: clawd/dragon sleep keep shut eyes; loafHalf sprite remains intact for peek/catStretch
+  assert.ok(rig.buildClipLayers('clawd', 'sleep', 3).includes(rig.CLAWD_PARTS.eyes.shut));
+  assert.ok(rig.buildClipLayers('dragon', 'sleep', 3).includes(rig.DRAGON_PARTS.eyes.shut));
+  assert.ok(rig.buildClipLayers('whale', 'peek', 3).includes(rig.WHALE_PARTS.eyes.loafHalf));
+  assert.ok(rig.buildClipLayers('cat', 'catStretch', 18, { clipTick: 18 }).includes(rig.CAT_PARTS.eyes.loafHalf));
+
+  // 2) Live stage check: non-working whale & cat loaf during streaming without tick-3 eye-blink redraw churn
+  const { doc } = createRigMockDom(760);
+  const hostEl = doc.createElement('div');
+  doc.body.appendChild(hostEl);
+  const stage = rig.mountDualMascotStage(hostEl, {
+    mascot: 'quad-minis',
+    camp: 'claude',
+    streaming: true,
+    reducedMotion: true,
+  });
+  try {
+    const getFrames = () => {
+      const byId = Object.fromEntries(stage.getLayoutSnapshot().actors.map((a) => [a.id, a]));
+      return {
+        whalePose: byId.whale.pose,
+        catPose: byId.cat.pose,
+        whaleFrame: byId.whale.renderCache.frameIdx,
+        catFrame: byId.cat.renderCache.frameIdx,
+      };
+    };
+    const f0 = getFrames();
+    assert.equal(f0.whalePose, 'loaf');
+    assert.equal(f0.catPose, 'loaf');
+    assert.notEqual(f0.whaleFrame, null, 'whale frame cache must be populated when host is connected');
+    assert.notEqual(f0.catFrame, null, 'cat frame cache must be populated when host is connected');
+
+    // Ticks 1..3 stay within z1 window (tickIdx % 8 < 4) — no phase4===3 eye flip on either whale or cat
+    for (let step = 1; step <= 3; step++) {
+      stage.stepTick(1);
+      const ft = getFrames();
+      assert.equal(ft.whaleFrame, f0.whaleFrame, `whale loaf frame must stay steady across z1 window at tick=${step}`);
+      assert.equal(ft.catFrame, f0.catFrame, `cat loaf frame must stay steady across z1 window at tick=${step}`);
+    }
+
+    // Tick 4 transitions z1 -> z2 (and cat tail curl -> loaf), then stays steady across ticks 5..7
+    stage.stepTick(1);
+    const f4 = getFrames();
+    assert.notEqual(f4.whaleFrame, f0.whaleFrame, 'whale loaf frame should update cleanly on z1 -> z2 transition');
+    assert.notEqual(f4.catFrame, f0.catFrame, 'cat loaf frame should update cleanly on z1 -> z2 transition');
+    for (let step = 5; step <= 7; step++) {
+      stage.stepTick(1);
+      const ft = getFrames();
+      assert.equal(ft.whaleFrame, f4.whaleFrame, `whale loaf frame must stay steady across z2 window at tick=${step}`);
+      assert.equal(ft.catFrame, f4.catFrame, `cat loaf frame must stay steady across z2 window at tick=${step}`);
+    }
+  } finally {
+    stage.dispose();
+  }
+});
