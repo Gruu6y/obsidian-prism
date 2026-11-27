@@ -1047,6 +1047,13 @@
         const sameDirChase = dA === dB && abs(dx) >= 4;
         if (!headOn && !sameDirChase) continue;
 
+        const doPass = (vaulter, yielded) => {
+          vaulter.px = clamp(vaulter.px + vaulter.dir * 8, minX, maxX);
+          vaulter.passHopUntilTick = nowTick + 4;
+          yielded.blinkAt = nowTick;
+          a.cooldownTick = b.cooldownTick = nowTick + 9;
+          events.push({ type: 'crabPass', pair: `${vaulter.id}-${yielded.id}` });
+        };
         if (headOn) {
           const pairKey = [a.id, b.id].sort().join('-');
           const count = pairCounts.get(pairKey) || 0;
@@ -1056,31 +1063,15 @@
             b.px = clamp(b.px + sign * 3, minX, maxX);
             a.dir = -sign;
             b.dir = sign;
-            a.bumpUntilTick = nowTick + 3;
-            b.bumpUntilTick = nowTick + 3;
-            a.cooldownTick = nowTick + 8;
-            b.cooldownTick = nowTick + 8;
+            a.bumpUntilTick = b.bumpUntilTick = nowTick + 3;
+            a.cooldownTick = b.cooldownTick = nowTick + 8;
             events.push({ type: 'crabBump', pair: `${a.id}-${b.id}` });
           } else {
-            const vaulter = a;
-            const yielded = b;
-            vaulter.px = clamp(vaulter.px + vaulter.dir * 8, minX, maxX);
-            vaulter.passHopUntilTick = nowTick + 4;
-            yielded.blinkAt = nowTick;
-            a.cooldownTick = nowTick + 9;
-            b.cooldownTick = nowTick + 9;
-            events.push({ type: 'crabPass', pair: `${vaulter.id}-${yielded.id}` });
+            doPass(a, b);
           }
         } else {
           const rearIsA = dA > 0 ? a.px < b.px : a.px > b.px;
-          const vaulter = rearIsA ? a : b;
-          const yielded = rearIsA ? b : a;
-          vaulter.px = clamp(vaulter.px + vaulter.dir * 8, minX, maxX);
-          vaulter.passHopUntilTick = nowTick + 4;
-          yielded.blinkAt = nowTick;
-          a.cooldownTick = nowTick + 9;
-          b.cooldownTick = nowTick + 9;
-          events.push({ type: 'crabPass', pair: `${vaulter.id}-${yielded.id}` });
+          doPass(rearIsA ? a : b, rearIsA ? b : a);
         }
         break;
       }
@@ -1395,7 +1386,7 @@
         walkStepTick: -1,
         lastRender: fillKeys({ cw: 0, ch: 0 }, 'poseKey,frameIdx,flip,tintState,tyPx,sqW,sqH,lastRot,clipBottomY', null),
       };
-      fillKeys(a, 'x,y,vx,vy,rot,overrideUntil,overrideRot,clipStartTick,symUntil,flying,throws,lastThrowAt,pokeCount,lastPokeAt,nodY,nodUntil,eyeScan,seqStartTick,glanceDir,glanceUntil,balRot,passBoostUntil,lastDomRot', 0);
+      fillKeys(a, 'x,y,vx,vy,rot,overrideUntil,overrideRot,clipStartTick,symUntil,flying,throws,lastThrowAt,pokeCount,lastPokeAt,nodY,nodUntil,eyeScan,seqStartTick,glanceDir,glanceUntil,balRot,passBoostUntil,lastDomRot,awakeUntil', 0);
       fillKeys(a, 'sqx,sqy,patrolDir,twitchLen', 1);
       fillKeys(a, 'blinkTick,breathTick,twitchTick,snapTick,forceTwitchStart', -99);
       fillKeys(a, 'overridePose,sym,stackedOn,el,canvas,seq,seqThen,faceDir,clipParam,prevX,lastFx,lastSq,lastDomX,lastDomY,lastDomZ', null);
@@ -1767,7 +1758,7 @@
     const getEnt = (id) => (hasOwn(actors, id) ? actors[id] : miniById.get(id) || null);
     const isMiniEnt = (ent) => Boolean(ent?.kind === 'mini');
     const entHalfW = (ent) => (isMiniEnt(ent) ? 13 : 22);
-    const mountStepH = (holderId) => (hasOwn(actors, holderId) ? 26 : 16);
+    const mountStepH = (hid, r = null) => { const h = getEnt(hid); return !h || isMiniEnt(h) ? 16 : isMiniEnt(r) ? (h.kind === 'whale' ? 13 : 16) : (h.kind === 'whale' ? 22 : 25); };
     const allActiveEnts = () => (miniPileEnabled ? [...activeMainActors(), ...miniCrabs] : activeMainActors());
     const maxTowerDepthAllowed = () => activeMainActors().length + (miniPileEnabled ? miniCrabs.length : 0);
 
@@ -1843,7 +1834,7 @@
         win.removeEventListener('blur', onPu);
       });
     }
-    const maxXFor = (w) => max(8, max(96, w - 14 - (popoverRightWidth > 0 ? min(w - 150, popoverRightWidth + 16) : 0)) - 80);
+    const maxXFor = (w) => actorBoundsX(w).maxAx;
     const miniZ = (m) => (yieldMode === 'peek' ? '8' : m.dragging ? '39' : m.stackedOn ? String(25 + getStackDepth(m.id) * 2) : '25');
     const syncTower = (a, now = nowMs()) => {
       if (isMiniEnt(a)) {
@@ -1897,96 +1888,59 @@
     const launchRebound = (a, targetCapX) => {
       if (disposed || !freeMain(a) || !a.sideEdgeSnap || a.sidePushOriginX == null) return;
       const ox = a.sidePushOriginX;
-      const fm = maxXFor(max(readStageWidth(), cachedHostWidth));
-      const tx = max(8, min(ox, targetCapX, fm));
+      const { minAx, maxAx: fm } = actorBoundsX(max(readStageWidth(), cachedHostWidth));
+      const tx = max(minAx, min(ox, targetCapX, fm));
       const dist = tx - a.x;
       a.sideEdgeSnap = false; a.sidePushOriginX = null; a.sideEdgeOffset = 0; a.sideEdgeDirectUntil = 0;
       if (dist >= 28 && !reducedMotion && !findDirectRider(a.id)) {
         const vy0 = -clamp(4.4 + dist / 220, 4.6, 8.2);
         let svy = vy0, sy = 0, sb = 0, sGain = 0, sMul = 1;
         for (let t = 0; t < 160; t++) {
-          svy += 0.44;
-          sMul *= 0.988;
-          svy *= 0.988;
-          sy += svy;
-          sGain += sMul;
+          svy = (svy + 0.44) * 0.988; sMul *= 0.988; sy += svy; sGain += sMul;
           if (sy >= 0) {
             sy = 0;
-            if (abs(svy) > 2.4 && sb < 2) {
-              svy = -svy * 0.36;
-              sMul *= 0.82;
-              sb += 1;
-            } else break;
+            if (abs(svy) > 2.4 && sb < 2) { svy *= -0.36; sMul *= 0.82; sb += 1; } else break;
           }
         }
-        const vx0 = dist / max(1, sGain);
-        startBallistic(a, vx0, vy0, { noSnap: true, reboundTargetX: tx, reboundNoBump: true });
+        startBallistic(a, dist / max(1, sGain), vy0, { noSnap: true, reboundTargetX: tx, reboundNoBump: true });
         renderAllFrames();
-      } else if (tx > a.x + 1) {
-        a.x = tx;
-        syncTower(a);
-        applyReboundGlide(a);
-      } else {
-        syncTower(a);
-      }
+      } else if (tx > a.x + 1) { a.x = tx; syncTower(a); applyReboundGlide(a); }
+      else syncTower(a);
+    };
+    const planReboundTargets = () => {
+      const { minAx, maxAx } = actorBoundsX(max(readStageWidth(), cachedHostWidth));
+      let capX = maxAx;
+      return activeMainActors()
+        .filter((a) => freeMain(a) && a.sideEdgeSnap && a.sidePushOriginX != null)
+        .sort((u, v) => v.sidePushOriginX - u.sidePushOriginX)
+        .map((a) => { const tx = clamp(capX, minAx, a.sidePushOriginX); capX = max(minAx, tx - 56); return { a, tx }; });
     };
     const scheduleRebound = () => {
       if (reboundTm) { clearTimeout(reboundTm); pendingTimers.delete(reboundTm); reboundTm = null; }
       reboundTm = later(120, () => {
         reboundTm = null;
-        if (isStageResizing()) return;
-        const fm = maxXFor(max(readStageWidth(), cachedHostWidth));
-        const mains = activeMainActors();
-        const list = mains
-          .filter((a) => freeMain(a) && a.sideEdgeSnap && a.sidePushOriginX != null)
-          .sort((u, v) => v.sidePushOriginX - u.sidePushOriginX);
-        let capX = fm;
-        const targets = list.map((a) => {
-          const tx = clamp(capX, 8, a.sidePushOriginX);
-          capX = max(8, tx - 56);
-          return { a, tx };
-        });
-        targets.forEach(({ a, tx }, idx) => (idx ? later(55 * idx, () => launchRebound(a, tx)) : launchRebound(a, tx)));
+        if (!isStageResizing()) planReboundTargets().forEach(({ a, tx }, idx) => (idx ? later(55 * idx, () => launchRebound(a, tx)) : launchRebound(a, tx)));
       });
     };
     const onStageResizeReleased = () => {
       if (disposed || isStageResizing()) return;
-      const mains = activeMainActors();
-      const snapped = mains
-        .filter((a) => freeMain(a) && a.sideEdgeSnap && a.sidePushOriginX != null)
-        .sort((u, v) => v.sidePushOriginX - u.sidePushOriginX);
-      if (!snapped.length) return;
-      let capX = maxXFor(max(readStageWidth(), cachedHostWidth));
-      let needReb = false;
-      for (const a of snapped) {
-        const tx = clamp(capX, 8, a.sidePushOriginX);
-        capX = max(8, tx - 56);
-        if (tx > a.x + 2) needReb = true;
-      }
-      if (needReb) {
-        scheduleRebound();
-      } else {
-        for (const a of snapped) {
-          a.sideEdgeDirectUntil = 0;
-          syncDirectMotionDomAttr(a, a.el);
-        }
-      }
+      const plan = planReboundTargets();
+      if (!plan.length) return;
+      if (plan.some(({ a, tx }) => tx > a.x + 2)) scheduleRebound();
+      else plan.forEach(({ a }) => { a.sideEdgeDirectUntil = 0; syncDirectMotionDomAttr(a, a.el); });
     };
     const handleStageWidthResize = (prevW, nw) => {
       if (disposed || !isFin(nw) || nw <= 0 || nw === prevW) return;
-      const now = nowMs(), nextMaxX = maxXFor(nw), mains = activeMainActors(), resizingNow = isStageResizing();
+      const now = nowMs(), { minAx, maxAx: nextMaxX } = actorBoundsX(nw), mains = activeMainActors(), resizingNow = isStageResizing();
       if (nw < prevW) {
         if (reboundTm) { clearTimeout(reboundTm); pendingTimers.delete(reboundTm); reboundTm = null; }
-        // 快路径：主角均远离右边界时 0 计算早退
         if (!mains.some((a) => freeMain(a) && a.x >= nextMaxX - 96)) return;
-        const beforeX = mains.map((a) => (a ? a.x : 0));
-        const order = mains.map((_, idx) => idx).sort((i, j) => beforeX[j] - beforeX[i]);
+        const beforeX = mains.map((a) => (a ? a.x : 0)), order = mains.map((_, i) => i).sort((i, j) => beforeX[j] - beforeX[i]);
         let capX = nextMaxX;
         for (const i of order) {
           const a = mains[i];
           if (!freeMain(a)) continue;
-          if (a.x > capX) { a.x = capX; capX = max(8, capX - 1); }
-          else capX = clamp(a.x - 1, 8, capX);
+          if (a.x > capX) { a.x = capX; capX = max(minAx, capX - 1); } else capX = clamp(a.x - 1, minAx, capX);
         }
         enforceGroundSeparation();
         for (let i = 0; i < mains.length; i++) {
@@ -1994,10 +1948,8 @@
           if (!freeMain(a)) continue;
           if (a.x < beforeX[i] - 0.5 || a.x >= nextMaxX - 4) {
             if (a.sidePushOriginX == null) a.sidePushOriginX = beforeX[i];
-            a.sideEdgeSnap = true;
-            a.sideEdgeOffset = max(0, nextMaxX - a.x);
-            a.sideEdgeDirectUntil = now + (resizingNow ? 220 : 180);
-            syncTower(a, now);
+            a.sideEdgeSnap = true; a.sideEdgeOffset = max(0, nextMaxX - a.x);
+            a.sideEdgeDirectUntil = now + (resizingNow ? 220 : 180); syncTower(a, now);
           }
         }
         return;
@@ -2009,20 +1961,14 @@
         if (!freeMain(a) || !a.sideEdgeSnap || a.sidePushOriginX == null) continue;
         const off = a.sideEdgeOffset || 0;
         if (!reboundTm && a.x < prevMaxX - off - 64) { a.sideEdgeSnap = false; a.sidePushOriginX = null; continue; }
-        const tx = clamp(nextMaxX - off, 8, a.sidePushOriginX);
+        const tx = clamp(nextMaxX - off, minAx, a.sidePushOriginX);
         if (resizingNow) {
           if (reboundTm) { clearTimeout(reboundTm); pendingTimers.delete(reboundTm); reboundTm = null; }
-          a.sideEdgeDirectUntil = now + 220;
-          a.x = tx;
-          syncTower(a, now);
+          a.sideEdgeDirectUntil = now + 220; a.x = tx; syncTower(a, now);
           if (tx >= a.sidePushOriginX - 1) { a.sideEdgeSnap = false; a.sidePushOriginX = null; a.sideEdgeOffset = 0; }
-        } else {
-          needReb = true;
-        }
+        } else needReb = true;
       }
-      if (needReb) {
-        scheduleRebound();
-      }
+      if (needReb) scheduleRebound();
     };
     const schedStageResize = (prevW, nw) => {
       if (!pendPrevW) pendPrevW = prevW;
@@ -2071,34 +2017,21 @@
       return cachedHostWidth || 720;
     };
 
-    const stageBoundsX = () => {
-      const w = readStageWidth();
-      const rightReserve = popoverRightWidth > 0 ? min(w - 150, popoverRightWidth + 16) : 0;
-      return {
-        minX: 14,
-        maxX: max(96, w - 14 - rightReserve),
-      };
+    const stageBoundsX = (w = readStageWidth()) => {
+      const r = popoverRightWidth > 0 ? min(w - 150, popoverRightWidth + 16) : 0;
+      return { minX: 14, maxX: max(96, w - 14 - r) };
     };
-
-    const clampActorX = (x) => {
-      const w = readStageWidth();
-      const rightReserve = popoverRightWidth > 0 ? min(w - 150, popoverRightWidth + 16) : 0;
-      const maxX = max(24, w - 88 - rightReserve);
-      return clamp(x, 8, maxX);
+    const entBounds = (mini, w = readStageWidth()) => {
+      const { minX, maxX } = stageBoundsX(w), hw = mini ? 13 : 22, off = mini ? 32 : 48, lo = minX + hw - off;
+      return { lo, hi: max(lo, maxX - hw - off) };
     };
-
+    const actorBoundsX = (w) => { const b = entBounds(false, w); return { minAx: b.lo, maxAx: b.hi }; };
+    const crabBoundsPx = (w) => { const b = entBounds(true, w); return { minPx: b.lo, maxPx: b.hi }; };
+    const clampActorX = (x) => { const b = entBounds(false); return clamp(x, b.lo, b.hi); };
     const getEntWorldCx = (ent) => (isMiniEnt(ent) ? 12 + (isFin(ent.px) ? ent.px : ent.x) + 20 : ent.x + 48);
     const setEntWorldCx = (ent, cx) => {
-      const { minX, maxX } = stageBoundsX();
-      const hw = entHalfW(ent);
-      const clamped = clamp(cx, minX + hw, maxX - hw);
-      if (isMiniEnt(ent)) {
-        const px = max(2, clamped - 32);
-        ent.px = px;
-        ent.lastX = round(px);
-      } else {
-        ent.x = clampActorX(clamped - 48);
-      }
+      const { minX, maxX } = stageBoundsX(), hw = entHalfW(ent), c = clamp(cx, minX + hw, maxX - hw);
+      if (isMiniEnt(ent)) { ent.px = c - 32; ent.lastX = round(ent.px); } else ent.x = c - 48;
     };
 
     const findDirectRider = (holderId) => {
@@ -2177,7 +2110,7 @@
           seen.add(cur.stackedOn);
           const base = getEnt(cur.stackedOn);
           if (!base) break;
-          yAcc -= mountStepH(base.id);
+          yAcc -= mountStepH(base.id, cur);
           cur = base;
         }
         return (cur ? cur.y || 0 : 0) + yAcc;
@@ -2196,7 +2129,7 @@
           const prev = getEnt(chain[i - 1]);
           const rider = getEnt(chain[i]);
           if (!rider || rider.dragging) break;
-          yCursor -= mountStepH(prev.id);
+          yCursor -= mountStepH(prev.id, rider);
           setEntWorldCx(rider, rootCx);
           rider.y = yCursor;
         }
@@ -2274,15 +2207,10 @@
       for (const id of activeMainIds()) {
         const a = actors[id];
         if (a.dragging || a.stackedOn) continue;
-        a.sideEdgeSnap = false;
-        a.sidePushOriginX = null;
-        a.sideEdgeOffset = 0;
-        a.sideEdgeDirectUntil = 0;
+        a.sideEdgeSnap = false; a.sidePushOriginX = null; a.sideEdgeOffset = a.sideEdgeDirectUntil = 0;
         const target = pos[id];
         if (animateWalk && !reducedMotion && abs(a.x - target) > 6 && a.y === 0) {
-          a.overridePose = 'walk';
-          a.overrideUntil = nowMs() + 380;
-          a.overrideRot = 0;
+          a.overridePose = 'walk'; a.overrideUntil = nowMs() + 380; a.overrideRot = 0;
         }
         a.x = target;
         if (a.y > 0) a.y = 0;
@@ -2292,41 +2220,16 @@
 
     resetHomePositions(false);
 
-    // ── 节拍序列：steps = [pose, ticks, sqW, sqH, lift] ───────────────────────
-    const playSeq = (actor, steps, then) => {
-      actor.seq = steps.map(([pose, ticks, sqW = 0, sqH = 0, lift = 0]) => ({ pose, ticks, sqW, sqH, lift }));
-      actor.seqStartTick = tickIdx + 1;
-      actor.seqThen = then || null;
-    };
-    const seqStep = (actor) => {
-      if (!actor.seq) return null;
-      let k = max(0, tickIdx - actor.seqStartTick);
-      for (const st of actor.seq) {
-        if (k < st.ticks) return st;
-        k -= st.ticks;
-      }
-      actor.seq = null;
-      const then = actor.seqThen;
-      actor.seqThen = null;
-      if (then) then();
-      return null;
+    const playSeq = (a, steps, then) => { a.seq = steps.map(([pose, ticks, sqW = 0, sqH = 0, lift = 0]) => ({ pose, ticks, sqW, sqH, lift })); a.seqStartTick = tickIdx + 1; a.seqThen = then || null; };
+    const seqStep = (a) => {
+      if (!a.seq) return null;
+      let k = max(0, tickIdx - a.seqStartTick);
+      for (const st of a.seq) { if (k < st.ticks) return st; k -= st.ticks; }
+      a.seq = null; const then = a.seqThen; a.seqThen = null; if (then) then(); return null;
     };
     const seqTotalMs = (steps) => steps.reduce((s, st) => s + st[1] * TICK, 0) + TICK;
-
-    const landingSteps = (flatTicks) => [
-      ['flat', flatTicks, 2, 0],
-      ['idle', 1, -2, 1],
-      ['idle', 1, 2, -1],
-    ];
-
-    const hopSteps = (airPose) => [
-      ['squash', 1, 2, -1, 0],
-      [airPose, 1, -1, 1, -2],
-      [airPose, 1, 0, 0, -4],
-      [airPose, 1, 0, 0, -4],
-      [airPose, 1, 0, 0, -2],
-      ['idle', 1, 2, -1, 0],
-    ];
+    const landingSteps = (ft) => [['flat', ft, 2, 0], ['idle', 1, -2, 1], ['idle', 1, 2, -1]];
+    const hopSteps = (ap) => [['squash', 1, 2, -1, 0], [ap, 1, -1, 1, -2], [ap, 1, 0, 0, -4], [ap, 1, 0, 0, -4], [ap, 1, 0, 0, -2], ['idle', 1, 2, -1, 0]];
 
     const resolvePoseFor = (actor, now) => {
       if (actor.dragging) return 'dangle';
@@ -2342,12 +2245,15 @@
         actor.clipParam = null;
       }
       const isWorker = isWorkingActor(actor);
+      const clickedAwake = now < (actor.awakeUntil || 0);
       if (hasError && isWorker) return 'angry';
       if (streaming) {
-        return isWorker ? 'write' : actor.kind === 'cat' || actor.kind === 'whale' ? 'loaf' : 'sleep';
+        if (isWorker) return 'write';
+        if (clickedAwake) return actor.pose || 'idle';
+        return actor.kind === 'cat' || actor.kind === 'whale' ? 'loaf' : 'sleep';
       }
       if (dozing) return 'sleep';
-      if (!isWorker && (actor.kind === 'cat' || actor.kind === 'whale') && floor(now / 9000) % 2 === 1) return 'loaf';
+      if (!isWorker && !clickedAwake && (actor.kind === 'cat' || actor.kind === 'whale') && floor(now / 9000) % 2 === 1) return 'loaf';
       return actor.pose || 'idle';
     };
 
@@ -2561,8 +2467,14 @@
         k0 -= act.segs[i].ticks;
       }
       if (segIdx < 0 || (act.abort && act.abort(segIdx))) {
+        if (segIdx >= 0) {
+          const s = act.segs[segIdx], k = (k0 + 1) / s.ticks, cy = round((s.y0 + (s.y1 - s.y0) * k - (s.arc || 0) * sin(PI * k)) / 2) * 2;
+          mc.px = mc.lastX = crabSafeX(s.x0 + (s.x1 - s.x0) * k);
+          mc.y = cy < 0 ? cy : 0;
+        }
         mc.act = null;
         if (segIdx >= 0 && act.onAbort) act.onAbort();
+        if (mc.y < 0) startMiniBallistic(mc, 0, 0, { noSnap: true });
         return null;
       }
       const seg = act.segs[segIdx], k = (k0 + 1) / seg.ticks;
@@ -2579,8 +2491,11 @@
       return { x: round(x), y: round(y / 2) * 2, sprite: sprite || baseSprite, mirror: mc.mirror, hopPx: seg.hop && !reducedMotion && k0 % 4 < 2 ? -2 : 0 };
     };
     const crabHostCenter = (mc) => 12 + mc.lastX + 20;
-    const crabSafeX = (x) => min(clampActorX(9999) - 132, max(2, round(x)));
-    const crabMaxX = () => max(40, readStageWidth() - 52);
+    const crabSafeX = (x) => {
+      const { minPx, maxPx } = crabBoundsPx();
+      return clamp(round(x), minPx, maxPx);
+    };
+    const crabMaxX = () => crabBoundsPx().maxPx;
     const nearestFreeCrab = (hx) => miniCrabs.filter((mc) => !mc.act || tickIdx - mc.act.start < 0).sort((m1, m2) => abs(crabHostCenter(m1) - hx) - abs(crabHostCenter(m2) - hx))[0] || null;
     const actorFree = (a, now) => !a.dragging && !a.ballisticActive && !a.stackedOn && !a.seq && a.y === 0 && !(a.overridePose === 'dangle' && now < a.overrideUntil);
     const crabsWave = () => {
@@ -2597,7 +2512,7 @@
         if (mc.act && mc.act.type === 'ride') return;
         const d = crabHostCenter(mc) - hx;
         if (abs(d) >= 64) return;
-        const dir = d >= 0 ? 1 : -1, x0 = crabSafeX(mc.lastX), far = max(0, min(crabMaxX(), x0 + dir * 26));
+        const dir = d >= 0 ? 1 : -1, x0 = crabSafeX(mc.lastX), far = crabSafeX(x0 + dir * 26);
         mc.act = {
           type: 'scatter', start: tickIdx + (idx % 2),
           segs: [{ ticks: 5, x0, x1: far, y0: 0, y1: 0, arc: 6, sprite: 'walk' }, { ticks: 4, x0: far, x1: far, y0: 0, y1: 0, sprite: 'still', face: -dir }, { ticks: 9, x0: far, x1: x0, y0: 0, y1: 0, sprite: 'walk' }],
@@ -2610,7 +2525,7 @@
       if (!cat || !miniPileEnabled || reducedMotion || dozing || !actorFree(cat, now) || (!force && stageBusy())) return false;
       const mc = nearestFreeCrab(cat.x + 48);
       if (!mc) return false;
-      const x0 = crabSafeX(mc.lastX), crabLeft = x0 + 32 < cat.x + 48, tx = max(0, min(crabMaxX(), crabLeft ? cat.x - 26 : cat.x + 58)), catDir = crabLeft ? -1 : 1;
+      const x0 = crabSafeX(mc.lastX), crabLeft = x0 + 32 < cat.x + 48, tx = crabSafeX(crabLeft ? cat.x - 26 : cat.x + 58), catDir = crabLeft ? -1 : 1;
       const dist = abs(tx - x0), approach = clamp(round(dist / 7), 3, 36), flee = clamp(round(dist / 10), 4, 28);
       mc.act = {
         type: 'chase', start: tickIdx + 1,
@@ -2638,11 +2553,11 @@
       if (!mc) return false;
       const x0 = crabSafeX(mc.lastX);
       const clawdX0 = clawd.x;
-      // Clawd 头顶（y=0 行顶边）距宿主底 33px，迷你蟹脚底距宿主底 11px → 上移 22px；水平居中对齐 48px / 20px
-      const headX = round(clawd.x + 16);
-      const headY = -22;
+      // 宿主头顶（Clawd 33px，cat/dragon/whale 30px）减去迷你蟹脚底距宿主底 11px → -22px / -19px
+      const headX = crabSafeX(round(clawd.x + 16));
+      const headY = clawd.kind === 'clawd' ? -22 : -19;
       const side = x0 + 32 < clawd.x + 48 ? -1 : 1;
-      const sideX = max(0, min(crabMaxX(), headX + side * 36));
+      const sideX = crabSafeX(headX + side * 36);
       const approach = max(1, min(36, round(abs(sideX - x0) / 7)));
       const SIT = 22;
       const act = {
@@ -2747,9 +2662,10 @@
         // 待机巡逻位移（每拍定步推进，底下散步时稳稳驮着头顶整串伙伴同步移动）
         if (pose === 'walk' && !a.dragging && !a.stackedOn && !a.leap && now < a.overrideUntil && !reducedMotion && a.walkStepTick !== tickIdx) {
           a.walkStepTick = tickIdx;
+          const { minAx, maxAx } = actorBoundsX();
           const stepPx = now < a.passBoostUntil ? 1.4 * 1.55 : 1.4;
           a.x = clampActorX(a.x + a.patrolDir * stepPx);
-          if (a.x <= 12 || a.x >= clampActorX(9999) - 2) a.patrolDir *= -1;
+          if (a.x <= minAx + 2 || a.x >= maxAx - 2) a.patrolDir *= -1;
           syncAllStackedFollowers();
         }
 
@@ -2951,13 +2867,13 @@
       }
       if (miniPileEnabled) {
         syncMiniDom(true);
-        const safeRight = max(48, (stageBoundsX().maxX || 680) - 48);
+        const { minPx: crabMinX, maxPx: crabMaxPx } = crabBoundsPx();
         if (!reducedMotion && !dozing && yieldMode !== 'peek' && lastCrabStepTick !== tickIdx) {
           lastCrabStepTick = tickIdx;
           const freeCorridorCrabs = miniCrabs.filter((mc) => !mc.dragging && !mc.ballisticActive && !mc.stackedOn && !mc.leap && mc.y === 0);
           const crabEvs = stepMiniCrabCorridor(freeCorridorCrabs, {
-            minX: 2,
-            maxX: safeRight,
+            minX: crabMinX,
+            maxX: crabMaxPx,
             contactDist: 26,
             nowTick: tickIdx,
           });
@@ -3011,9 +2927,9 @@
             mc.px = targetX; mc.lastX = round(targetX);
           } else if (actPos) {
             targetX = actPos.x; targetY = actPos.y;
-            if (actPos.y === 0) mc.px = mc.lastX = clamp(actPos.x, 2, safeRight);
+            if (actPos.y === 0) mc.px = mc.lastX = clamp(actPos.x, crabMinX, crabMaxPx);
           } else {
-            const rawX = mc.dragging ? mc.px : clamp(moving ? mc.px : (mc.px ?? mc.x), 2, safeRight);
+            const rawX = mc.dragging ? mc.px : clamp(moving ? mc.px : (mc.px ?? mc.x), crabMinX, crabMaxPx);
             targetX = snapCoord(rawX, mcDirect);
             targetY = snapCoord((mc.y || 0) + (yieldMode === 'peek' && !mc.dragging && !mc.stackedOn && !mc.leap ? MINI_PEEK_Y : 0), mcDirect);
             mc.lastX = round(targetX);
@@ -3068,28 +2984,14 @@
       if (!opts.keepFly) ent.flying += 1;
       if (!opts.keepBallistic) ent.ballisticActive = false;
       ent.leap = null;
-      if (!opts.keepVel) {
-        ent.vx = 0;
-        ent.vy = 0;
-      }
+      if (!opts.keepVel) ent.vx = ent.vy = 0;
       ent.rot = 0;
-      if (isMiniEnt(ent)) {
-        if (!opts.keepAct) ent.act = null;
-        return;
-      }
-      if (!opts.keepPose) {
-        ent.overridePose = null;
-        ent.overrideUntil = 0;
-      }
-      ent.overrideRot = 0;
-      ent.balRot = 0;
+      if (isMiniEnt(ent)) { if (!opts.keepAct) ent.act = null; return; }
+      if (!opts.keepPose) { ent.overridePose = null; ent.overrideUntil = 0; }
+      ent.overrideRot = ent.balRot = 0;
       if (!opts.keepMirror) ent.mirror = false;
-      ent.faceDir = null;
-      ent.clipParam = null;
-      if (!opts.keepSeq) {
-        ent.seq = null;
-        ent.seqThen = null;
-      }
+      ent.faceDir = ent.clipParam = null;
+      if (!opts.keepSeq) ent.seq = ent.seqThen = null;
     };
 
     // 减少动态开启：中止抛掷/巡逻/序列与星屑，回到静态待机
@@ -3140,11 +3042,26 @@
       }
     };
 
-    // ── 五段递进戳戳气鼓鼓 + 叠塔连击四下切换隐藏棱彩形态 ────────────────────
+    const isActorSleepingPose = (a, now = nowMs()) => {
+      if (!a || isMiniEnt(a)) return false;
+      if (dozing) return true;
+      const w = isWorkingActor(a);
+      return !w && now >= (a.awakeUntil || 0) && (streaming || ((a.kind === 'cat' || a.kind === 'whale') && floor(now / 9000) % 2 === 1));
+    };
     const triggerPoke = (actor, fromPointer) => {
       if (!actor) return;
-      const now = nowMs();
+      const now = nowMs(), woke = Boolean(actor._wokeOnDown || isActorSleepingPose(actor, now));
+      actor._wokeOnDown = false;
+      if (dozing && !isHostSleeping() && !isDocHidden()) { dozing = false; lastActivityAt = now; }
+      if (woke) actor.awakeUntil = now + 20000;
       markActivity();
+      if (fromPointer && woke) {
+        actor.flying += 1; actor.seq = null; actor.pokeCount = 0; actor.lastPokeAt = now;
+        startClip(actor, 'sulk', 1100, { mirror: true, sym: 'vein' });
+        recordInteraction('sleepWakeGrumpy', actor.id, now);
+        renderAllFrames(now);
+        return;
+      }
 
       if (actor.kind === 'cat') {
         const towerLen = getTowerMembers(actor.id).length;
@@ -3387,7 +3304,7 @@
         if (baseChain.length + moverChain.length > maxDepth) continue;
         const top = getEnt(baseChain[baseChain.length - 1]);
         if (!top || top.dragging || top.ballisticActive || top.leap || ((top.y || 0) < -2 && !top.stackedOn)) continue;
-        const perchY = computeWorldFootY(top) - mountStepH(top.id);
+        const perchY = computeWorldFootY(top) - mountStepH(top.id, mover);
         if (abs(moverCx - getEntWorldCx(top)) <= 28 && moverFootY >= perchY - 24 && moverFootY <= perchY + 20) {
           resetActorTransient(mover, { keepFly: true });
           mover.stackedOn = top.id; mover.y = mover.perchUntil = 0;
@@ -3427,7 +3344,7 @@
         const k = max(0.5, min(2.5, (now - prev) / 16.6667)); prev = now;
         let holder = targetHolderId ? getEnt(targetHolderId) : null;
         if (holder && (holder.dragging || getTowerMembers(holder.id).includes(subRoot.id) || getTowerMembers(holder.id).length + subLen > maxTowerDepthAllowed())) holder = null;
-        const goalY = holder ? computeWorldFootY(holder) - mountStepH(holder.id) : 0;
+        const goalY = holder ? computeWorldFootY(holder) - mountStepH(holder.id, subRoot) : 0;
         if (isDocHidden() || isHostSleeping() || parked) { landSettle(holder, false); syncTower(subRoot, now); reclaimStageVram(); return; }
         if (holder) { const curCx = getEntWorldCx(subRoot); setEntWorldCx(subRoot, curCx + (getEntWorldCx(holder) - curCx) * min(1, 0.35 * k)); }
         vy = min(14, vy + 0.54 * k); subRoot.y += vy * k; subRoot.vy = vy;
@@ -3487,7 +3404,7 @@
         resetActorTransient(mover, { keepFly: true });
         if (reducedMotion) { mover.stackedOn = top.id; mover.y = 0; mover.perchUntil = now + 7200; syncAllStackedFollowers(); }
         else {
-          mover.leap = { cx0: moverCx, cx1: getEntWorldCx(top), peak: max(26, abs(computeWorldFootY(top) - mountStepH(top.id)) + 10), startTick: tickIdx, ticks: 5, landOnto: top.id };
+          mover.leap = { cx0: moverCx, cx1: getEntWorldCx(top), peak: max(26, abs(computeWorldFootY(top) - mountStepH(top.id, mover)) + 10), startTick: tickIdx, ticks: 5, landOnto: top.id };
           if (!isMiniEnt(obsRoot) && !obsRoot.dragging && !obsRoot.stackedOn) startClip(obsRoot, 'walk', 2800, { patrolDir: dir });
         }
       } else {
@@ -3519,7 +3436,10 @@
       const step = (now) => {
         if (disposed || flightId !== ent.flying || ent.dragging) { if (disposed || ent.dragging) ent.ballisticActive = false; return; }
         if (isDocHidden() || isHostSleeping() || parked) {
-          if (hasReboundTarget) ent.x = max(8, min(maxXFor(readStageWidth()), bopts.reboundTargetX));
+          if (hasReboundTarget) {
+            const { minAx, maxAx } = actorBoundsX();
+            ent.x = clamp(bopts.reboundTargetX, minAx, maxAx);
+          }
           if (!mini) ent.reboundNoBump = false;
           resetActorTransient(ent, { keepFly: true }); ent.y = 0; enforceGroundSeparation();
           if (!mini) applyActorTransform(ent, now); else syncTower(ent, now);
@@ -3529,7 +3449,7 @@
         const k = max(0.5, min(2.5, (now - prev) / 16.6667)); prev = now;
         vy += (mini ? 0.46 : 0.44) * k;
         const drag = Math.pow(mini ? 0.985 : 0.988, k); vx *= drag; vy *= drag;
-        let mainMinX = 8, mainMaxX = 40;
+        const { minAx: mainMinX, maxAx: mainMaxX } = actorBoundsX();
         if (mini) {
           const { minX, maxX } = stageBoundsX(), hw = entHalfW(ent);
           let cx = getEntWorldCx(ent) + vx * k;
@@ -3537,7 +3457,7 @@
           else if (cx > maxX - hw) { cx = maxX - hw; vx = -0.45 * vx; }
           setEntWorldCx(ent, cx); ent.y = max(-180, (ent.y || 0) + vy * k);
         } else {
-          ent.x += vx * k; ent.y += vy * k; mainMaxX = maxXFor(readStageWidth());
+          ent.x += vx * k; ent.y += vy * k;
           if (hasReboundTarget) {
             const targetX = clamp(bopts.reboundTargetX, mainMinX, mainMaxX);
             if ((vx >= 0 && ent.x > targetX) || (vx < 0 && ent.x < targetX)) { ent.x = targetX; vx = 0; }
@@ -3691,6 +3611,14 @@
         downX = lastMoveX = evt.clientX; downY = lastMoveY = evt.clientY;
         startY = ent.stackedOn ? computeWorldFootY(ent) : ent.y || 0;
         lastMoveT = downNow; moved = petTriggered = false;
+        if (!mini) {
+          ent._wokeOnDown = isActorSleepingPose(ent, downNow);
+          if (ent._wokeOnDown) ent.awakeUntil = downNow + 20000;
+          if (dozing && !isHostSleeping() && !isDocHidden()) {
+            dozing = false;
+            lastActivityAt = downNow;
+          }
+        }
         markActivity(); resetActorTransient(ent);
         if (!mini) {
           clearTimeout(petTimer);
@@ -3716,12 +3644,12 @@
         lastMoveX = evt.clientX; lastMoveY = evt.clientY; lastMoveT = now;
         const nextY = clamp(startY + dyTotal, -180, 0);
         if (mini) {
-          const nextPx = max(2, clamp(startX + dxTotal, cachedA, cachedB) - 32);
+          const nextPx = clamp(startX + dxTotal, cachedA, cachedB) - 32;
           ent.px = nextPx; ent.lastX = round(nextPx); ent.y = nextY;
           applyMiniTransform(ent, snapCoord(nextPx, true), snapCoord(nextY, true), '39', ent.rot);
         } else {
-          const rightReserve = popoverRightWidth > 0 ? min(cachedA - 150, popoverRightWidth + 16) : 0;
-          ent.x = max(4, min(max(24, cachedA - 88 - rightReserve), startX + dxTotal)); ent.y = nextY;
+          const { minAx, maxAx } = actorBoundsX(cachedA);
+          ent.x = clamp(startX + dxTotal, minAx, maxAx); ent.y = nextY;
           applyActorTransform(ent, now);
         }
         if (justStarted) renderAllFrames(now); else scheduleDragRender();
@@ -3748,6 +3676,7 @@
         clearTimeout(petTimer); ent.el.releasePointerCapture?.(evt.pointerId);
         const prevMoveT = lastMoveT; lastMoveT = 0;
         if (moved) {
+          if (!mini) ent._wokeOnDown = false;
           ent.dragging = false; syncMascotDragRootAttr();
           const pNow = nowMs();
           if (pNow - prevMoveT > 35) ent.vx = ent.vy = 0;
@@ -3770,18 +3699,14 @@
       };
       dragReleaseHooks.push(cancelDragOnBlur);
       const onContextMenu = (evt) => { if (!mini && yieldMode !== 'peek') { evt.preventDefault(); evt.stopPropagation(); feedActor(ent, 'donut'); } };
-      ent.el.addEventListener('pointerdown', onDown); ent.el.addEventListener('pointermove', onMove);
-      ent.el.addEventListener('pointerup', onUp); ent.el.addEventListener('pointercancel', onUp);
-      if (!mini) ent.el.addEventListener('contextmenu', onContextMenu);
+      const ptrEvs = [['pointerdown', onDown], ['pointermove', onMove], ['pointerup', onUp], ['pointercancel', onUp]];
+      if (!mini) ptrEvs.push(['contextmenu', onContextMenu]);
+      for (const [ev, fn] of ptrEvs) ent.el.addEventListener(ev, fn);
       const unbind = () => {
         clearTimeout(petTimer);
         const idx = dragReleaseHooks.indexOf(cancelDragOnBlur);
         if (idx >= 0) dragReleaseHooks.splice(idx, 1);
-        if (ent.el) {
-          ent.el.removeEventListener('pointerdown', onDown); ent.el.removeEventListener('pointermove', onMove);
-          ent.el.removeEventListener('pointerup', onUp); ent.el.removeEventListener('pointercancel', onUp);
-          if (!mini) ent.el.removeEventListener('contextmenu', onContextMenu);
-        }
+        if (ent.el) for (const [ev, fn] of ptrEvs) ent.el.removeEventListener(ev, fn);
       };
       ent._pointerCleanup = unbind; cleanups.push(unbind);
     };
@@ -4012,6 +3937,7 @@
       if (dozing) return;
       dozing = true;
       for (const a of activeMainActors()) {
+        a.awakeUntil = 0;
         if (a.overridePose && a.overridePose !== 'dangle') a.overrideUntil = 0;
         a.eyeScan = 0;
       }

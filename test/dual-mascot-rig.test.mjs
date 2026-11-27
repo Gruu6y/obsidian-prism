@@ -3228,3 +3228,112 @@ test('peek 探头姿态深度（PEEK_Y=7）与输入框顶边裁切保护（不�
   assert.ok(peekLine.includes('pointer-events:none !important;'), 'peek 规则必须保留 pointer-events:none !important');
   assert.ok(peekLine.includes('clip-path:inset(-48px -24px 8px -24px)!important;'), 'peek 规则必须通过底部 clip-path 裁切防止压过输入框顶边穿帮');
 });
+
+test('Issue #162: flush mini-crab stacking on large mascots, symmetric stage bounds, and grumpy wake-up on sleeping mascot click', async () => {
+  // 1) Mini-crab stacking height aligns flush to host head (11px mini baseline + step === 27px clawd/cat/dragon, 24px whale)
+  const hStack = createInteractiveStageHarness({ miniPileEnabled: true, reducedMotion: false });
+  hStack.stage.setState({ mascot: 'quad-minis', camp: 'claude' });
+  try {
+    assert.equal(hStack.stage.stackOnto('cowboy', 'clawd'), true);
+    assert.equal(hStack.stage.stackOnto('shades', 'whale'), true);
+    const snap = hStack.stage.getLayoutSnapshot();
+    const cowboy = snap.minis.find((m) => m.id === 'cowboy');
+    const shades = snap.minis.find((m) => m.id === 'shades');
+    assert.equal(cowboy.y, -16, 'Mini-crab on Clawd must sit flush at y=-16 (11+16=27px squashed head)');
+    assert.equal(shades.y, -13, 'Mini-crab on Whale must sit flush at y=-13 (11+13=24px squashed head)');
+
+    // Second mini-crab stacked on top of cowboy still steps by -16
+    assert.equal(hStack.stage.stackOnto('wizard', 'cowboy'), true);
+    const wizard = hStack.stage.getLayoutSnapshot().minis.find((m) => m.id === 'wizard');
+    assert.equal(wizard.y, -32, 'Mini-crab stacked on mini-crab must step by -16 (-16-16=-32)');
+
+    // Drag-drop mini-crab directly onto Whale head at y=-13 snaps cleanly
+    hStack.stage.pullFromStack('shades', 'settle');
+    const shadesFree = hStack.stage.getLayoutSnapshot().minis.find((m) => m.id === 'shades');
+    const whaleSnap = hStack.stage.getLayoutSnapshot().actors.find((a) => a.id === 'whale');
+    const shadesEl = hStack.findMiniEl('shades');
+    shadesEl.dispatch('pointerdown', { clientX: shadesFree.worldCx, clientY: 100 });
+    shadesEl.dispatch('pointermove', { clientX: whaleSnap.worldCx, clientY: 100 - 13 });
+    await new Promise((r) => setTimeout(r, 40));
+    shadesEl.dispatch('pointerup', { clientX: whaleSnap.worldCx, clientY: 100 - 13 });
+    const afterDrop = hStack.stage.getLayoutSnapshot();
+    assert.equal(afterDrop.minis.find((m) => m.id === 'shades').stackedOn, 'whale');
+    assert.equal(afterDrop.minis.find((m) => m.id === 'shades').y, -13);
+  } finally {
+    hStack.stage.dispose();
+  }
+
+  // 2) Unified left & right boundaries between mini-crabs and main actors (including popoverRightWidth reserve)
+  const hBounds = createInteractiveStageHarness({ mascot: 'dual-minis', camp: 'gemini', reducedMotion: false });
+  try {
+    const clawdEl = hBounds.findActorEl('clawd');
+    const miniEl = hBounds.findMiniEl('cowboy');
+    const snap0 = hBounds.stage.getLayoutSnapshot();
+    const clawd0 = snap0.actors.find((a) => a.id === 'clawd');
+    const mini0 = snap0.minis.find((m) => m.id === 'cowboy');
+
+    // Drag both far left (one at a time so ground separation doesn't push them apart)
+    clawdEl.dispatch('pointerdown', { clientX: clawd0.worldCx, clientY: 100 });
+    clawdEl.dispatch('pointermove', { clientX: clawd0.worldCx - 900, clientY: 100 });
+    const clawdLeft = hBounds.stage.getLayoutSnapshot().actors.find((a) => a.id === 'clawd');
+    assert.equal(clawdLeft.worldCx - 22, 14, 'Main actor left outer bound must align to stageBoundsX().minX=14');
+    clawdEl.dispatch('pointerup', { clientX: clawd0.worldCx - 900, clientY: 100 });
+
+    miniEl.dispatch('pointerdown', { clientX: mini0.worldCx, clientY: 100 });
+    miniEl.dispatch('pointermove', { clientX: mini0.worldCx - 900, clientY: 100 });
+    const miniLeft = hBounds.stage.getLayoutSnapshot().minis.find((m) => m.id === 'cowboy');
+    assert.equal(miniLeft.worldCx - 13, 14, 'Mini-crab left outer bound must align to stageBoundsX().minX=14');
+    miniEl.dispatch('pointerup', { clientX: mini0.worldCx - 900, clientY: 100 });
+
+    // Drag both far right with popoverRightWidth=140 -> both must stop symmetrically at maxX = 720 - 14 - (140 + 16) = 550
+    hBounds.stage.setState({ popoverRightWidth: 140 });
+    const snapBeforeRight = hBounds.stage.getLayoutSnapshot();
+    const cBR = snapBeforeRight.actors.find((a) => a.id === 'clawd');
+    clawdEl.dispatch('pointerdown', { clientX: cBR.worldCx, clientY: 100 });
+    clawdEl.dispatch('pointermove', { clientX: cBR.worldCx + 900, clientY: 100 });
+    const clawdRight = hBounds.stage.getLayoutSnapshot().actors.find((a) => a.id === 'clawd');
+    assert.equal(clawdRight.worldCx + 22, 550, 'Main actor right outer bound must align to stageBoundsX().maxX=550');
+    clawdEl.dispatch('pointerup', { clientX: cBR.worldCx + 900, clientY: 100 });
+
+    const mBR = hBounds.stage.getLayoutSnapshot().minis.find((m) => m.id === 'cowboy');
+    miniEl.dispatch('pointerdown', { clientX: mBR.worldCx, clientY: 100 });
+    miniEl.dispatch('pointermove', { clientX: mBR.worldCx + 900, clientY: 100 });
+    const miniRight = hBounds.stage.getLayoutSnapshot().minis.find((m) => m.id === 'cowboy');
+    assert.equal(miniRight.worldCx + 13, 550, 'Mini-crab right outer bound must align to stageBoundsX().maxX=550');
+    miniEl.dispatch('pointerup', { clientX: mBR.worldCx + 900, clientY: 100 });
+  } finally {
+    hBounds.stage.dispose();
+  }
+
+  // 3) Clicking a sleeping mascot wakes it up with grumpy reaction ("起床气") and keeps it awake instead of falling right back asleep
+  const hSleep = createInteractiveStageHarness({ miniPileEnabled: false, reducedMotion: false });
+  hSleep.stage.setState({ streaming: true });
+  try {
+    // Non-working Clawd sleeps during streaming
+    assert.equal(hSleep.stage.getLayoutSnapshot().actors.find((a) => a.id === 'clawd').pose, 'sleep');
+    const clawdEl = hSleep.findActorEl('clawd');
+    const clawd0 = hSleep.stage.getLayoutSnapshot().actors.find((a) => a.id === 'clawd');
+    clawdEl.dispatch('pointerdown', { clientX: clawd0.worldCx, clientY: 100 });
+    clawdEl.dispatch('pointerup', { clientX: clawd0.worldCx, clientY: 100 });
+
+    const snapWaking = hSleep.stage.getLayoutSnapshot();
+    const clawdWaking = snapWaking.actors.find((a) => a.id === 'clawd');
+    assert.equal(clawdWaking.pose, 'sulk', 'Clicking a sleeping mascot must trigger grumpy wake-up pose');
+    assert.equal(clawdWaking.sym, 'vein', 'Grumpy wake-up must display vein symbol');
+    assert.equal(snapWaking.lastInteraction.type, 'sleepWakeGrumpy');
+
+    // Wait past the 1100ms sulk clip: Clawd must remain awake (idle), NOT drop immediately back to sleep
+    await new Promise((r) => setTimeout(r, 1250));
+    const clawdAwake = hSleep.stage.getLayoutSnapshot().actors.find((a) => a.id === 'clawd');
+    assert.equal(clawdAwake.pose, 'idle', 'Woken mascot must stay awake instead of immediately returning to sleep');
+
+    // Second click while awake enters normal poke-1 reaction (with anticipate squash + spark)
+    clawdEl.dispatch('pointerdown', { clientX: clawdAwake.worldCx, clientY: 100 });
+    clawdEl.dispatch('pointerup', { clientX: clawdAwake.worldCx, clientY: 100 });
+    const clawdPoke1 = hSleep.stage.getLayoutSnapshot().actors.find((a) => a.id === 'clawd');
+    assert.equal(clawdPoke1.pokeCount, 1, 'Follow-up click while awake must advance normal pokeCount');
+    assert.equal(clawdPoke1.sym, 'spark', 'Follow-up click while awake must emit poke-1 spark symbol');
+  } finally {
+    hSleep.stage.dispose();
+  }
+});
