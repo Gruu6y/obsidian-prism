@@ -2671,8 +2671,10 @@ test('[Coexist-13] Layer 1 detects all Top 13 external localization fingerprints
   const themeMenu = exEnv.makeEl('div', { id: 'agy-theme-menu', text: 'Cancel' });
   const quotaW = exEnv.makeEl('div', { id: 'antigravity-quota-widget', text: 'Settings' });
   const auditW = exEnv.makeEl('div', { id: 'antigravity-translation-audit', text: 'Save' });
+  const umCapsule = exEnv.makeEl('div', { id: 'ag-usage-monitor-capsule', text: 'Settings' });
+  const umPortal = exEnv.makeEl('div', { id: 'ag-usage-monitor-portal', text: 'Save' });
   const realHostBtn = exEnv.makeEl('button', { text: 'Settings' });
-  exEnv.doc.body.append(hansUi, themeSw, themeMenu, quotaW, auditW, realHostBtn);
+  exEnv.doc.body.append(hansUi, themeSw, themeMenu, quotaW, auditW, umCapsule, umPortal, realHostBtn);
 
   const exInst = runtime.mountHostI18n({ root: exEnv.win, doc: exEnv.doc, dict, mode: 'on' });
   assert.equal(hansUi.textContent, 'Settings', '[data-agy-hans-ui] must be exempted');
@@ -2680,8 +2682,33 @@ test('[Coexist-13] Layer 1 detects all Top 13 external localization fingerprints
   assert.equal(themeMenu.textContent, 'Cancel', '#agy-theme-menu must be exempted');
   assert.equal(quotaW.textContent, 'Settings', '#antigravity-quota-widget must be exempted');
   assert.equal(auditW.textContent, 'Save', '#antigravity-translation-audit must be exempted');
+  assert.equal(umCapsule.textContent, 'Settings', '#ag-usage-monitor-capsule must be exempted');
+  assert.equal(umPortal.textContent, 'Save', '#ag-usage-monitor-portal must be exempted');
   assert.equal(realHostBtn.textContent, '设置', 'Normal host button still translates');
   exInst.destroy();
+
+  // swarm-i18n-runtime.js skips #ag-usage-monitor-capsule / #ag-usage-monitor-portal without triggering detectExternalSwarmI18n yield
+  const swarmRuntime = require(path.join(ROOT, 'vendor', 'host-i18n', 'swarm-i18n-runtime.js'));
+  const swarmDict = JSON.parse(fs.readFileSync(path.join(ROOT, 'vendor', 'host-i18n', 'swarm-zh-CN.json'), 'utf8'));
+  const swEnv = createTestEnv();
+  swEnv.win.location = {
+    protocol: 'plugin:',
+    hostname: 'swarm--swarm_board-4808',
+    href: 'plugin://swarm--swarm_board-4808/',
+  };
+  const swTabs = swEnv.makeEl('nav', { attrs: { 'data-testid': 'swarm-tabs' } });
+  const swFeedBtn = swEnv.makeEl('button', { id: 'tabbtn-feed', text: 'Board' });
+  swTabs.append(swFeedBtn);
+  const swUmCapsule = swEnv.makeEl('div', { id: 'ag-usage-monitor-capsule', text: 'Board' });
+  const swUmPortal = swEnv.makeEl('div', { id: 'ag-usage-monitor-portal', text: 'Members' });
+  swEnv.doc.body.append(swTabs, swUmCapsule, swUmPortal);
+  assert.equal(swarmRuntime.detectExternalSwarmI18n(swEnv.win, swEnv.doc), null, 'usage-monitor capsule/portal must NOT trigger swarm i18n auto-yield');
+  const swInst = swarmRuntime.mountSwarmI18n({ root: swEnv.win, doc: swEnv.doc, dict: swarmDict });
+  assert.equal(swInst.status, 'active');
+  assert.equal(swFeedBtn.textContent, '消息板', 'Swarm UI button must still translate');
+  assert.equal(swUmCapsule.textContent, 'Board', '#ag-usage-monitor-capsule must be skipped in swarm-i18n');
+  assert.equal(swUmPortal.textContent, 'Members', '#ag-usage-monitor-portal must be skipped in swarm-i18n');
+  swInst.destroy();
 
   // Defense against renkeshui monkey-patching Map.prototype.has / Map.prototype.get
   const rtSrc = fs.readFileSync(path.join(ROOT, 'vendor', 'host-i18n', 'host-i18n-runtime.js'), 'utf8');

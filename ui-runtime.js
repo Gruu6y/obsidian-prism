@@ -1151,7 +1151,7 @@ return svg;
 return null;
 };
 
-const EXT_ZH_UI_SEL = '[data-agy-hans-ui], #agy-theme-switcher, #agy-theme-menu, #antigravity-quota-widget, #antigravity-translation-audit';
+const EXT_ZH_UI_SEL = '[data-agy-hans-ui], #agy-theme-switcher, #agy-theme-menu, #antigravity-quota-widget, #antigravity-translation-audit, #ag-usage-monitor-capsule, #ag-usage-monitor-portal';
 
 const detectHostIconTarget = (btn) => {
 if (!btn || clHas(btn, 'ag-prism-thought-raw-toggle') || cl(btn, '.ag-prism-thought-overlay')) return '';

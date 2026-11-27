@@ -2892,3 +2892,100 @@ test('vendor/pulse-dashboard/inline-fallback.js auto-yields to agy-powertools te
     ctlLate.destroy();
   }
 });
+
+test('Usage & Speed Monitor coexistence: container & body-mounted #ag-usage-monitor-capsule auto-yields in telemetry auto mode, honors on/off without mutation, ignores hidden capsule, and exempts CSS/slider/omni/ui-runtime', async () => {
+  // 1) Container-mounted (e.g. titlebar) and direct doc.body-mounted #ag-usage-monitor-capsule
+  for (const mountPoint of ['container', 'body']) {
+    const env = createLightweightDom();
+    const capsule = env.makeEl('div');
+    capsule.id = 'ag-usage-monitor-capsule';
+    if (mountPoint === 'container') {
+      const titlebar = env.makeEl('div');
+      titlebar.className = 'titlebar-container';
+      titlebar.appendChild(capsule);
+      env.doc.body.appendChild(titlebar);
+    } else {
+      env.doc.body.appendChild(capsule);
+    }
+
+    const ctl = telemetryMod.createTelemetryController({ window: env.win, document: env.doc });
+    try {
+      const stAuto = ctl.sync({ telemetryModule: 'auto', __fallbackDelayMs: 10 });
+      assert.equal(stAuto.yieldedToExternal, true, `auto mode must yield to ${mountPoint}-mounted #ag-usage-monitor-capsule`);
+      assert.equal(stAuto.hasExternal, true);
+      assert.equal(stAuto.mountedFallback, false);
+      await new Promise((r) => setTimeout(r, 25));
+      assert.equal(env.doc.getElementById('ag-prism-pulse-bar'), null);
+
+      // Explicit mode="on" mounts built-in bar without hiding or mutating capsule
+      const stOn = ctl.sync({ telemetryModule: 'on' });
+      assert.equal(stOn.mountedFallback, true, `mode="on" must honor explicit user override with ${mountPoint}-mounted capsule`);
+      assert.equal(stOn.yieldedToExternal, false);
+      assert.ok(env.doc.getElementById('ag-prism-pulse-bar'));
+      assert.equal(capsule.getAttribute('data-ag-prism-hidden'), null);
+      assert.equal(capsule.hidden, false);
+      assert.equal(capsule.style.getPropertyValue('opacity'), '');
+      assert.equal(capsule.style.getPropertyValue('position'), '');
+      assert.equal(capsule.style.getPropertyValue('display'), '');
+
+      // mode="off" unmounts built-in bar and leaves capsule untouched
+      const stOff = ctl.sync({ telemetryModule: 'off' });
+      assert.equal(stOff.mountedFallback, false);
+      assert.equal(env.doc.getElementById('ag-prism-pulse-bar'), null);
+      assert.equal(capsule.getAttribute('data-ag-prism-hidden'), null);
+      assert.equal(capsule.hidden, false);
+      assert.equal(capsule.style.getPropertyValue('opacity'), '');
+    } finally {
+      ctl.destroy();
+    }
+  }
+
+  // 2) Hidden capsule (hidden=true or display:none) must NOT trigger auto-yield
+  const envHid = createLightweightDom();
+  const hidCapsule = envHid.makeEl('div');
+  hidCapsule.id = 'ag-usage-monitor-capsule';
+  hidCapsule.hidden = true;
+  envHid.doc.body.appendChild(hidCapsule);
+  const ctlHid = telemetryMod.createTelemetryController({ window: envHid.win, document: envHid.doc });
+  try {
+    const stHid = ctlHid.sync({ telemetryModule: 'auto', __fallbackDelayMs: 10 });
+    assert.equal(stHid.hasExternal, false, 'hidden=true capsule must not count as active external telemetry');
+    assert.equal(stHid.yieldedToExternal, false);
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(ctlHid.getState().mountedFallback, true, 'fallback must mount when capsule is hidden');
+
+    // Un-hiding then setting display:none also does not count as active
+    hidCapsule.hidden = false;
+    await ctlHid.refresh();
+    assert.equal(ctlHid.getState().hasExternal, true);
+    assert.equal(ctlHid.getState().mountedFallback, false, 'visible body-mounted capsule must auto-yield on refresh');
+
+    hidCapsule.style.display = 'none';
+    await ctlHid.refresh();
+    assert.equal(ctlHid.getState().hasExternal, false, 'display:none capsule must not block fallback');
+    assert.equal(ctlHid.getState().mountedFallback, true);
+  } finally {
+    ctlHid.destroy();
+  }
+
+  // 3) Static exemptions in style.css (0 :has()), slider-coexist.js, omni-client.js, ui-runtime.js, and inline-fallback.js
+  const cssSrc = fs.readFileSync(path.join(ROOT_DIR, 'style.css'), 'utf8');
+  assert.equal(cssSrc.includes(':has('), false, 'style.css must have strictly 0 :has(');
+  const footerExcl = ':not(#ag-pulse-status-bar):not(#ag-usage-monitor-capsule):not(#ag-usage-monitor-portal)';
+  assert.ok(cssSrc.includes(`&>div:not(:first-child):not(#ag-prism-pulse-bar):not([data-ag-prism-pulse-bar])${footerExcl}{`), 'style.css footer direct-child rule must exempt usage-monitor capsule/portal');
+  assert.ok(cssSrc.includes(`&>div:not(:first-child):not(#ag-prism-pulse-bar):not([data-ag-prism-pulse-bar])${footerExcl}>div.flex{`), 'style.css footer flex-child rule must exempt usage-monitor capsule/portal');
+
+  const sliderSrc = fs.readFileSync(path.join(ROOT_DIR, 'vendor', 'effort-slider', 'slider-coexist.js'), 'utf8');
+  assert.ok(sliderSrc.includes(',#ag-usage-monitor-capsule,#ag-usage-monitor-portal'), 'slider-coexist IGNORED_CHAT_SEL must exempt usage-monitor capsule/portal');
+
+  const omniSrc = fs.readFileSync(path.join(ROOT_DIR, 'vendor', 'omni-viewer', 'omni-client.js'), 'utf8');
+  assert.ok(omniSrc.includes("'#ag-usage-monitor-capsule'"), 'omni-client STATIC_EXCLUDED_SELECTOR must exempt #ag-usage-monitor-capsule');
+  assert.ok(omniSrc.includes("'#ag-usage-monitor-portal'"), 'omni-client STATIC_EXCLUDED_SELECTOR must exempt #ag-usage-monitor-portal');
+  assert.ok(omniSrc.includes("id === 'ag-usage-monitor-capsule' || id === 'ag-usage-monitor-portal'"), 'omni-client mutation fast-path must exempt usage-monitor capsule/portal');
+
+  const uiRtSrc = fs.readFileSync(path.join(ROOT_DIR, 'ui-runtime.js'), 'utf8');
+  assert.ok(uiRtSrc.includes('#antigravity-translation-audit, #ag-usage-monitor-capsule, #ag-usage-monitor-portal'), 'ui-runtime EXT_ZH_UI_SEL must exempt usage-monitor capsule/portal');
+
+  const fbSrc = fs.readFileSync(path.join(ROOT_DIR, 'vendor', 'pulse-dashboard', 'inline-fallback.js'), 'utf8');
+  assert.ok(fbSrc.includes(',#ag-usage-monitor-capsule,#ag-usage-monitor-portal'), 'inline-fallback IGN_STREAM_SEL must exempt usage-monitor capsule/portal');
+});

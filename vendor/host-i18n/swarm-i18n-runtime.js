@@ -28,7 +28,7 @@
   var SWARM_HOST_RE = /^swarm--swarm_board-\d+$/;
   var ROOT_ATTR = 'data-ag-prism-swarm-i18n';
  var SKIP_SUBTREE_TAGS = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, CODE: 1, PRE: 1, CANVAS: 1, IFRAME: 1, VIDEO: 1, AUDIO: 1, TEMPLATE: 1, TEXTAREA: 1, KBD: 1 };
- var SKIP_SUBTREE_IDS = { 'ov-frame': 1, raw: 1, 'raw-meta': 1, 'swarm-title': 1 };
+ var SKIP_SUBTREE_IDS = { 'ov-frame': 1, raw: 1, 'raw-meta': 1, 'swarm-title': 1, 'ag-usage-monitor-capsule': 1, 'ag-usage-monitor-portal': 1 };
  var SELECT_WHITELIST_IDS = { 'f-agent': 1, 'f-mention': 1, 'f-channel': 1, 'replay-timing': 1 };
   // 元素及其后代文本绝对豁免（动态内容、成员名、消息正文、代码、路径等）
   var EXEMPT_TEXT_CLASSES = {
@@ -901,42 +901,23 @@
     yieldReason = lateExt;
     return;
   }
-    try {
-    doc.documentElement.setAttribute(ROOT_ATTR, 'active');
-   } catch (_) {}
-   var MO = win.MutationObserver || (typeof MutationObserver !== 'undefined' ? MutationObserver : null);
-   if (typeof MO === 'function') {
-    observer = new MO(function (records) {
-     if (destroyed || isApplying || status !== 'active') return;
-     if (!Array.isArray(records) || records.length === 0) { dirtyFullScan = true; scheduleScan(); return; }
-     var enqueued = false;
-     for (var i = 0; i < records.length; i++) {
-      var r = records[i];
-      if (!r) continue;
-      if (r.type === 'childList') {
-       var added = r.addedNodes;
-       if (added && added.length) {
-        for (var j = 0; j < added.length; j++) { enqueueDirtyNode(added[j]); enqueued = true; }
-  }
-      } else if ((r.type === 'characterData' || r.type === 'attributes') && r.target) {
-       enqueueDirtyNode(r.target);
-       enqueued = true;
-  }
-  }
-     if (enqueued || dirtyFullScan) scheduleScan();
-        });
-  }
-      if (typeof doc.addEventListener === 'function') {
-    try {
-          doc.addEventListener('visibilitychange', onVisibilityChange);
-    } catch (_) {}
-  }
-      if (typeof win.addEventListener === 'function') {
-    try {
-     win.addEventListener('blur', onWindowBlur);
-     win.addEventListener('focus', onWindowFocus);
-    } catch (_) {}
-  }
+   try{doc.documentElement.setAttribute(ROOT_ATTR,'active');}catch(_){}
+   var MO=win.MutationObserver||(typeof MutationObserver!=='undefined'?MutationObserver:null);
+   if(typeof MO==='function'){
+    observer=new MO(function(records){
+     if(destroyed||isApplying||status!=='active')return;
+     if(!Array.isArray(records)||records.length===0){dirtyFullScan=true;scheduleScan();return;}
+     var enqueued=false;
+     for(var i=0;i<records.length;i++){
+      var r=records[i];if(!r)continue;
+      if(r.type==='childList'){var added=r.addedNodes;if(added&&added.length)for(var j=0;j<added.length;j++){enqueueDirtyNode(added[j]);enqueued=true;}}
+      else if((r.type==='characterData'||r.type==='attributes')&&r.target){enqueueDirtyNode(r.target);enqueued=true;}
+     }
+     if(enqueued||dirtyFullScan)scheduleScan();
+    });
+   }
+   if(typeof doc.addEventListener==='function')try{doc.addEventListener('visibilitychange',onVisibilityChange);}catch(_){}
+   if(typeof win.addEventListener==='function')try{win.addEventListener('blur',onWindowBlur);win.addEventListener('focus',onWindowFocus);}catch(_){}
    scan();
   }
     var instance = {

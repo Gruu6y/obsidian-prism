@@ -32,7 +32,7 @@
  var PRISM_OWNED_IDS = { 'ag-cs-settings-sec': 1, 'ag-prism-settings-sec': 1, 'ag-prism-pulse-bar': 1, 'ag-pulse-status-bar': 1, 'ag-prism-periodic-picker-root': 1, 'ag-prism-overlay-portal': 1 };
  var PRISM_OWNED_ATTRS = ['data-ag-prism-pulse-bar', 'data-ag-prism-ui', 'data-ag-cs-ui', 'data-ag-no-i18n', 'data-ag-owned', 'data-ces-part', 'data-ag-prism-sidebar-owned', 'data-ag-prism-omni-owned', 'data-ag-prism-fallback', 'data-ag-prism-overlay'];
  var PRISM_CLASS_PREFIXES = ['ag-cs-', 'ag-prism-', 'ag-v2-', 'ag-omni-', 'ag-ss-', 'ag-pp-', 'ces-', 'ag-anim-'];
- var EXTERNAL_OWNED_IDS = { 'agy-theme-switcher': 1, 'agy-theme-menu': 1, 'antigravity-quota-widget': 1, 'antigravity-translation-audit': 1 };
+ var EXTERNAL_OWNED_IDS = { 'agy-theme-switcher': 1, 'agy-theme-menu': 1, 'antigravity-quota-widget': 1, 'antigravity-translation-audit': 1, 'ag-usage-monitor-capsule': 1, 'ag-usage-monitor-portal': 1 };
  var EXTERNAL_OWNED_ATTRS = ['data-agy-hans-ui'];
  var CHAT_PROSE_CLASSES = ['prose', 'markdown-body', 'chat-markdown-message', 'rendered-markdown'];
  var CHAT_PROSE_CLASS_MAP = toLookupMap(CHAT_PROSE_CLASSES);
