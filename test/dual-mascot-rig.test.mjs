@@ -3228,3 +3228,56 @@ test('peek 探头姿态深度（PEEK_Y=7）与输入框顶边裁切保护（不�
   assert.ok(peekLine.includes('pointer-events:none !important;'), 'peek 规则必须保留 pointer-events:none !important');
   assert.ok(peekLine.includes('clip-path:inset(-48px -24px 8px -24px)!important;'), 'peek 规则必须通过底部 clip-path 裁切防止压过输入框顶边穿帮');
 });
+
+test('Issue #175: leftReserveWidth / rightReserveWidth keep main mascots, patrol, and mini crabs inside unobstructed runway', () => {
+  const { doc } = createRigMockDom(680);
+  const hostEl = doc.createElement('div');
+  doc.body.appendChild(hostEl);
+  const stage = rig.mountDualMascotStage(hostEl, {
+    mascot: 'quad-minis',
+    camp: 'claude',
+    reducedMotion: false,
+    leftReserveWidth: 320,
+  });
+  try {
+    const snap0 = stage.getLayoutSnapshot();
+    assert.equal(snap0.leftReserveWidth, 320);
+    for (const a of snap0.actors) {
+      assert.ok(a.worldCx - 24 >= 320 - 8, `actor ${a.id} visual left (${a.worldCx - 24}) must stay clear of leftReserveWidth=320`);
+      assert.ok(a.x >= 304, `actor ${a.id} x (${a.x}) must respect minActorXFor(320)`);
+    }
+    for (const mc of snap0.minis) {
+      assert.ok(mc.worldCx >= 316, `mini ${mc.id} worldCx (${mc.worldCx}) must spawn clear of leftReserveWidth=320`);
+    }
+
+    // Patrol ticks must turn around at leftReserveWidth instead of walking into the reserved toolbar zone
+    stage.triggerDemo('walk');
+    for (let i = 0; i < 60; i++) stage.stepTick(1);
+    const snapWalk = stage.getLayoutSnapshot();
+    for (const a of snapWalk.actors) {
+      assert.ok(a.x >= 304, `patrolling actor ${a.id} x (${a.x}) must stay >= 304`);
+    }
+    for (const mc of snapWalk.minis) {
+      assert.ok(mc.worldCx >= 316, `patrolling mini ${mc.id} worldCx (${mc.worldCx}) must stay >= 316`);
+    }
+
+    // Expanding leftReserveWidth dynamically pushes actors & minis right out of newly occupied zone
+    stage.setState({ leftReserveWidth: 420 });
+    const snapExpanded = stage.getLayoutSnapshot();
+    assert.equal(snapExpanded.leftReserveWidth, 420);
+    for (const a of snapExpanded.actors) {
+      assert.ok(a.x >= 404, `actor ${a.id} x (${a.x}) must shift clear of expanded leftReserveWidth=420`);
+    }
+    for (const mc of snapExpanded.minis) {
+      assert.ok(mc.worldCx >= 416, `mini ${mc.id} worldCx (${mc.worldCx}) must shift clear of expanded leftReserveWidth=420`);
+    }
+
+    // Clearing reserve restores full stage bounds
+    stage.setState({ leftReserveWidth: 0, rightReserveWidth: 0 });
+    const snapCleared = stage.getLayoutSnapshot();
+    assert.equal(snapCleared.leftReserveWidth, 0);
+    assert.equal(snapCleared.rightReserveWidth, 0);
+  } finally {
+    stage.dispose();
+  }
+});

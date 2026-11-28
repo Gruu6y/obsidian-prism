@@ -4071,11 +4071,12 @@ test('Channel 1 budget (< 684,500 B), periodicModelPicker default on, style.css 
   assert.equal(topLevelHas.length, 0, 'style.css must contain 0 top-level :has() rules');
 });
 
-test('PR #114: home toolbarPlacement="top" gets 46px mascot clearance and z-index:12 without forcing peek mode, and cleans up on off/remove', () => {
+test('Issue #175 / PR #114: home toolbarPlacement="top" stays compact (no 46px gap), raises z-index:26 with pointer pass-through, and auto-peeks on narrow width', () => {
   const timers = new Set();
   function makeEl(tag, opts = {}) {
     const attrs = new Map(Object.entries(opts.attrs || {}));
     const styles = new Map();
+    const rectBox = opts.rect || { top: 0, left: 0, right: 640, bottom: 80, width: 640, height: 80 };
     const node = {
       nodeType: 1,
       tagName: tag.toUpperCase(),
@@ -4086,6 +4087,7 @@ test('PR #114: home toolbarPlacement="top" gets 46px mascot clearance and z-inde
       parentElement: null,
       parentNode: null,
       textContent: opts.text || '',
+      _rect: rectBox,
       style: {
         setProperty(k, v) { styles.set(k, String(v)); },
         getPropertyValue(k) { return styles.get(k) || ''; },
@@ -4104,13 +4106,14 @@ test('PR #114: home toolbarPlacement="top" gets 46px mascot clearance and z-inde
       removeChild(c) { node.children = node.children.filter((x) => x !== c); c.parentElement = null; c.parentNode = null; return c; },
       remove() { if (node.parentElement) node.parentElement.removeChild(node); },
       contains(target) { let cur = target; while (cur) { if (cur === node) return true; cur = cur.parentElement; } return false; },
-      getBoundingClientRect() { return { top: 0, left: 0, right: 640, bottom: 80, width: 640, height: 80 }; },
+      getBoundingClientRect() { return node._rect; },
       matches(sel) {
         const matchOne = (el, part) => {
           if (part.startsWith('#')) return el.id === part.slice(1).replace(/\\\./g, '.');
           if (part.startsWith('.')) return el.classList.contains(part.slice(1));
           const am = part.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/);
           if (am) return am[2] !== undefined ? el.getAttribute(am[1]) === am[2] : el.hasAttribute(am[1]);
+          if (/^[a-z0-9_-]+$/i.test(part)) return el.tagName.toLowerCase() === part.toLowerCase();
           return false;
         };
         return sel.split(',').some((raw) => {
@@ -4149,7 +4152,10 @@ test('PR #114: home toolbarPlacement="top" gets 46px mascot clearance and z-inde
   const inputBox = makeEl('div', { attrs: { 'data-testid': 'agent-input-box' } });
   const composerShell = makeEl('div', { id: 'antigravity.agentSidePanelInputBox', className: 'surface-composer' });
   const topToolbarWrap = makeEl('div', { className: 'relative z-[1]' });
-  const topToolbar = makeEl('div', { attrs: { 'data-testid': 'input-box-bottom-toolbar' }, text: 'Local checkout' });
+  const topToolbar = makeEl('div', { attrs: { 'data-testid': 'input-box-bottom-toolbar' } });
+  topToolbar.appendChild(makeEl('button', { text: 'This Computer', rect: { top: 0, left: 0, right: 110, bottom: 28, width: 110, height: 28 } }));
+  topToolbar.appendChild(makeEl('button', { text: 'Workspace', rect: { top: 0, left: 118, right: 210, bottom: 28, width: 92, height: 28 } }));
+  topToolbar.appendChild(makeEl('button', { text: 'Local checkout', rect: { top: 0, left: 218, right: 310, bottom: 28, width: 92, height: 28 } }));
   topToolbarWrap.appendChild(topToolbar);
   const card = makeEl('div', { className: 'surface-composer-card' });
   card.appendChild(makeEl('div', { className: 'agy-composer-footer' }));
@@ -4206,13 +4212,27 @@ test('PR #114: home toolbarPlacement="top" gets 46px mascot clearance and z-inde
     assert.equal(res.status, 'ok');
     vm.runInNewContext(cdp.buildMascotChannelExpression(cdp.DEFAULT_CONFIG), sandbox);
     assert.equal(topToolbarWrap.getAttribute('data-ag-cs-top-toolbar'), '1', 'home top toolbar wrapper must get data-ag-cs-top-toolbar');
-    assert.equal(topToolbarWrap.style.getPropertyValue('margin-bottom'), '46px', 'home top toolbar wrapper must reserve 46px for mascot');
+    assert.equal(topToolbarWrap.style.getPropertyValue('margin-bottom'), '', 'home top toolbar wrapper must stay compact without 46px gap');
     const crabStage = card.querySelector('.ag-cs-crab');
     assert.ok(crabStage, 'mascot stage must mount on home composer card');
-    assert.equal(crabStage.getAttribute('data-ag-mascot-peek'), null, 'home top toolbar must NOT force mascot into peek mode');
+    assert.equal(crabStage.getAttribute('data-ag-mascot-peek'), null, 'wide home top toolbar must keep mascot full-height (non-peek) in open right space');
+
+    // Narrow viewport where toolbar buttons leave < 104px free runway: compact layout remains & mascot auto-peeks
+    card._rect = { top: 0, left: 0, right: 360, bottom: 80, width: 360, height: 80 };
+    sandbox.window.__agPrism.sync();
+    assert.equal(topToolbarWrap.style.getPropertyValue('margin-bottom'), '', 'narrow home top toolbar must still avoid 46px gap');
+    assert.equal(crabStage.getAttribute('data-ag-mascot-peek'), '1', 'narrow home top toolbar must auto-peek mascot so pills stay unobstructed');
+
+    card._rect = { top: 0, left: 0, right: 640, bottom: 80, width: 640, height: 80 };
+    sandbox.window.__agPrism.sync();
+    assert.equal(crabStage.getAttribute('data-ag-mascot-peek'), null, 'restoring wide home composer must restore full-height mascot');
 
     const cssSrc = fs.readFileSync(path.join(path.dirname(require.resolve('../cdp.js')), 'style.css'), 'utf8');
-    assert.ok(cssSrc.includes('[data-ag-cs-top-toolbar="1"]{margin-bottom:46px !important;position:relative !important;z-index:12 !important;}'), 'style.css must lower top toolbar z-index to 12 below mascot stage 22');
+    assert.ok(
+      cssSrc.includes('[data-ag-cs-top-toolbar="1"]{position:relative !important;z-index:26 !important;pointer-events:none !important;') &&
+        !cssSrc.includes('[data-ag-cs-top-toolbar="1"]{margin-bottom:46px'),
+      'style.css must remove 46px margin-bottom and elevate top toolbar to z-index:26 with pointer-events pass-through'
+    );
 
     sandbox.window.__agClaudeStyle.refreshConfig({ ...cdp.DEFAULT_CONFIG, mascot: 'off' });
     assert.equal(topToolbarWrap.hasAttribute('data-ag-cs-top-toolbar'), false, 'mascot=off must clear data-ag-cs-top-toolbar');

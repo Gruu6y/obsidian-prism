@@ -424,11 +424,12 @@ test('2) PR #114 home top-toolbar clearance + ask_question frame-0 peek/pointer-
   try {
     env.flushRaf();
 
-    // PR #114: home top toolbar receives data-ag-cs-top-toolbar="1" and mascot stays full-height (NOT peek)
+    // Issue #175 / PR #114: home top toolbar receives data-ag-cs-top-toolbar="1" without 46px margin-bottom gap, and mascot stays full-height when open space exists
     assert.equal(topToolbar.getAttribute('data-ag-cs-top-toolbar'), '1', 'Home top toolbar above composer must receive data-ag-cs-top-toolbar="1"');
+    assert.equal(topToolbar.style.getPropertyValue('margin-bottom'), '', 'Home top toolbar must stay compact without 46px margin-bottom gap');
     const stage = composerCard.querySelector('.ag-cs-crab');
     assert.ok(stage, 'Mascot stage must mount on composer card');
-    assert.equal(stage.hasAttribute('data-ag-mascot-peek'), false, 'Home top toolbar clearance must NOT trigger mascot peek');
+    assert.equal(stage.hasAttribute('data-ag-mascot-peek'), false, 'Home top toolbar clearance must NOT trigger mascot peek when open space exists');
 
     // Switch to conversation view & simulate async React mount of ask_question takeover card with initial 0px height!
     home.remove();
